@@ -1,0 +1,11 @@
+.git
+tags
+
+#phase 2
+phase_2/mat_mul_c/bin/
+phase_2/mat_mul_c/obj/
+phase_2/mat_mul_c/src/tags
+
+phase_2/mat_mul_openCL/bin/
+phase_2/mat_mul_openCL/obj/
+phase_2/mat_mul_openCL/src/tags
