@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.1)
+set( CMAKE_EXPORT_COMPILE_COMMANDS ON )
+project(zncc_c LANGUAGES C CXX)
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
+#find_package(OpenCL REQUIRED)
+add_executable(${PROJECT_NAME} main.cpp zncc.cpp zncc.h getAverage.c getAverage.h getStandardDeviation.c getStandardDeviation.h lodepng.cpp lodepng.h imageManipulation.cpp imageManipulation.h)
+#target_include_directories(${PROJECT_NAME} PRIVATE ${OpenCL_INCLUDE_DIRS})
+#target_link_libraries(${PROJECT_NAME} PRIVATE ${OpenCL_LIBRARIES})
