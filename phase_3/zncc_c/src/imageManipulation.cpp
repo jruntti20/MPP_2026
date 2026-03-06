@@ -1,25 +1,6 @@
 #include <errno.h>
 #include <stdio.h>
-#include "lodepng.h"
 
-#define WIDTH 2940
-#define HEIGHT 2016
-/*
-//TODO Solve the segmentation fault
-
-void ReadImage(char* imgPath, unsigned char* inputImage){
-
-    unsigned int w = WIDTH;
-    unsigned int h = HEIGHT;
-    uint32_t Error = 0;
-
-    Error = lodepng_decode_file(&inputImage, &w, &h, imgPath, LCT_RGBA, 8);
-    if (Error){
-        printf("Error in reading the left or right input image %u: %s\n", Error, lodepng_error_text(Error));
-    }
-    if(errno) printf("Value of errno: %d\n", errno);
-}
-*/
 void resizeImage(const unsigned char* inputImage, unsigned char* resizedImg, int w, int h){
 
     if(errno) printf("Value of errno after calling function ResizeImage: %d\n", errno);
@@ -52,9 +33,4 @@ void grayScaleImage(const unsigned char* inputImage, unsigned char* grayScaleImg
             grayScaleImg[i*w+j] = (unsigned char)(0.299*inputImage[idx]+0.587*inputImage[idx + 1]+0.114*inputImage[idx + 2]);
         }
     }
-
-    //    grayScaleImg[i] = (inputImage[i*4]*0.299 
-    //            + inputImage[1 + i * 4]*0.587 
-    //            + inputImage[2 + i * 4]*0.114);
-    //}
 }
