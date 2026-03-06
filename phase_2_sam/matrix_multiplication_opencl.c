@@ -23,40 +23,47 @@ const char* kernelSource =
 
 int main() {
     cl_int err;
+    const int N = 100;
+    const int iterations = 1000;
+    size_t bytes = N*N*sizeof(float);
+
+    // Allocate matrices dynamically
+    float *A = (float*)malloc(bytes);
+    float *B = (float*)malloc(bytes);
+    float *C = (float*)malloc(bytes);
+
+    // Initialize matrices
+    for(int i=0;i<N*N;i++){
+        A[i] = i % 100 + 1;  // 1..100 repeating
+        B[i] = (i % 100 + 1)*2; // 2,4,6,...
+    }
 
     // 1️⃣ Platform
     cl_platform_id platform;
-    err = clGetPlatformIDs(1, &platform, NULL);
-    CHECK_ERROR(err, "Failed to get platform");
+    err = clGetPlatformIDs(1,&platform,NULL);
+    CHECK_ERROR(err,"Failed to get platform");
 
-    // 2️⃣ Device (CPU)
+    // 2️⃣ Device
     cl_device_id device;
-    err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
-    CHECK_ERROR(err, "Failed to get device");
+    err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, 1, &device, nullptr);
+    CHECK_ERROR(err,"Failed to get device");
 
     char deviceName[128];
     clGetDeviceInfo(device, deviceName, sizeof(deviceName), deviceName, NULL);
-    printf("Using device: %s\n", deviceName);
-    printf("OpenCL initialized OK\n");
+    printf("Running 1000 iterations of **GPU** matrix multiplication on 100x100 matrices...\n");
 
     // 3️⃣ Context & Queue
-    cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
-    CHECK_ERROR(err, "Failed to create context");
-    cl_command_queue queue = clCreateCommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
-    CHECK_ERROR(err, "Failed to create queue");
+    cl_context context = clCreateContext(NULL,1,&device,NULL,NULL,&err);
+    CHECK_ERROR(err,"Failed to create context");
+    cl_command_queue queue = clCreateCommandQueue(context,device,CL_QUEUE_PROFILING_ENABLE,&err);
+    CHECK_ERROR(err,"Failed to create queue");
 
-    // 4️⃣ Matriisit (hardcoded)
-    const int N = 4;
-    float A[16] = {1,2,3,4, 5,6,7,8, 9,10,11,12, 13,14,15,16};
-    float B[16] = {16,15,14,13, 12,11,10,9, 8,7,6,5, 4,3,2,1};
-    float C[16];
+    // 4️⃣ Buffers
+    cl_mem bufA = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, bytes, A, &err);
+    cl_mem bufB = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, bytes, B, &err);
+    cl_mem bufC = clCreateBuffer(context, CL_MEM_WRITE_ONLY, bytes, NULL, &err);
 
-    // 5️⃣ Buffers
-    cl_mem bufA = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*N*N, A, &err);
-    cl_mem bufB = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*N*N, B, &err);
-    cl_mem bufC = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(float)*N*N, NULL, &err);
-
-    // 6️⃣ Program & Kernel
+    // 5️⃣ Program & Kernel
     cl_program program = clCreateProgramWithSource(context,1,&kernelSource,NULL,&err);
     CHECK_ERROR(err,"Failed to create program");
     err = clBuildProgram(program,1,&device,NULL,NULL,NULL);
@@ -69,6 +76,7 @@ int main() {
         free(log);
         exit(1);
     }
+
     cl_kernel kernel = clCreateKernel(program,"mat_mul",&err);
     CHECK_ERROR(err,"Failed to create kernel");
 
@@ -77,24 +85,22 @@ int main() {
     clSetKernelArg(kernel,2,sizeof(cl_mem),&bufC);
     clSetKernelArg(kernel,3,sizeof(int),&N);
 
-    // 7️⃣ Kellotus + 1000 kertaa
+    // 6️⃣ Run kernel
     size_t globalSize[2] = {N,N};
     double t0 = current_time_ms();
-    for(int i=0;i<1000;i++){
-        err = clEnqueueNDRangeKernel(queue,kernel,2,NULL,globalSize,NULL,0,NULL,NULL);
+    for(int i=0;i<iterations;i++){
+        clEnqueueNDRangeKernel(queue,kernel,2,NULL,globalSize,NULL,0,NULL,NULL);
         clFinish(queue);
     }
     double t1 = current_time_ms();
-    printf("Executed 1000x OpenCL matrix multiplication in %.3f ms\n", t1-t0);
+    printf("Executed %dx OpenCL matrix multiplication in %.3f ms\n", iterations, t1-t0);
 
-    // 8️⃣ Read result
-    clEnqueueReadBuffer(queue, bufC, CL_TRUE, 0, sizeof(float)*N*N, C, 0,NULL,NULL);
+    // 7️⃣ Read result
+    clEnqueueReadBuffer(queue,bufC,CL_TRUE,0,bytes,C,0,NULL,NULL);
 
-    printf("Result matrix C:\n");
-    for(int i=0;i<N;i++){
-        for(int j=0;j<N;j++) printf("%.1f ", C[i*N + j]);
-        printf("\n");
-    }
+    printf("C[0..4]: ");
+    for(int i=0;i<5;i++) printf("%.1f ", C[i]);
+    printf("\n");
 
     // Cleanup
     clReleaseKernel(kernel);
@@ -104,6 +110,10 @@ int main() {
     clReleaseMemObject(bufC);
     clReleaseCommandQueue(queue);
     clReleaseContext(context);
+
+    free(A);
+    free(B);
+    free(C);
 
     return 0;
 }
