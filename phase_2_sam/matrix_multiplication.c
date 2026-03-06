@@ -20,14 +20,22 @@ void cpu_matmul(float* A, float* B, float* C, int N) {
 }
 
 int main() {
-    const int N = 4;
+    const int N = 100;
     const int iterations = 1000;
-    float A[16] = {1,2,3,4, 5,6,7,8, 9,10,11,12, 13,14,15,16};
-    float B[16] = {16,15,14,13, 12,11,10,9, 8,7,6,5, 4,3,2,1};
-    float C[16];
+    size_t bytes = N*N*sizeof(float);
 
-    printf("Running CPU matrix multiplication...\n");
+    // Allocate matrices dynamically
+    float *A = (float*)malloc(bytes);
+    float *B = (float*)malloc(bytes);
+    float *C = (float*)malloc(bytes);
 
+    for(int i=0;i<N*N;i++){
+        A[i] = i % 100 + 1;
+        B[i] = (i % 100 + 1)*2;
+    }
+
+    //printf("Running CPU matrix multiplication...\n");
+    printf("Running 1000 iterations of **CPU** matrix multiplication on 100x100 matrices...\n");
     double t0 = current_time_ms();
     for(int i=0;i<iterations;i++){
         cpu_matmul(A,B,C,N);
@@ -36,12 +44,13 @@ int main() {
 
     printf("Executed %dx CPU matrix multiplication in %.3f ms\n", iterations, t1-t0);
 
-    printf("Result matrix C:\n");
-    for(int i=0;i<N;i++){
-        for(int j=0;j<N;j++)
-            printf("%.1f ", C[i*N + j]);
-        printf("\n");
-    }
+    printf("C[0..4]: ");
+    for(int i=0;i<5;i++) printf("%.1f ", C[i]);
+    printf("\n");
+
+    free(A);
+    free(B);
+    free(C);
 
     return 0;
 }
