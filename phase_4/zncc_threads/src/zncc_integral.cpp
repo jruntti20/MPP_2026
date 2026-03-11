@@ -12,20 +12,40 @@ void zncc_worker(ThreadData *data)
     {
         for(int x = r; x < data->img_w - r; x++)
         {
-            float best_zncc_score = -1.0f;
-            int best_disparity_val = 0;
+            float best_zncc_score = 0;
+            unsigned int best_disparity_val = 0;
+
+            float avg1 = data->meanL[(y + r) * data->img_w + (x + r)];
 
             for (int d = 0; d < data->max_disp; d++)
             {
-                float dot = 0.0f;
+                
+                float avg2 = data->meanR[(y + r) * data->img_w + (x + r - (d * data->disp_sign))]; 
+                float zncc_score = 0;
+                float left_pix_diff = 0;
+                float right_pix_diff = 0;
+                float upper_sum = 0;
+                float lower_sum_0 = 0;
+                float lower_sum_1 = 0;
+
+                //float dot = 0.0f;
                 for (int j = -r; j <= r; j++)
                 {
                     for (int i = -r; i <= r; i++)
                     {
+
+                        
+                        //Borders checking
+                        if (!(x+i-(d*data->disp_sign) >= 0) || !(x+i-(d * data->disp_sign) < data->img_w)){
+                            continue;
+                        }
+                        
+
+
                         float a = data->left[(y+j)*data->img_w + x + i];
                         float b = data->right[(y+j)*data->img_w + x + i - (d * data->disp_sign)];
 
-                        dot += a*b;
+                        //dot += a*b;
                     }
                 }
 
@@ -48,12 +68,12 @@ void zncc_worker(ThreadData *data)
 
             }
 
-            data->disparity[y*data->img_w + x] = best_disparity_val; 
+            data->disparity[y*data->img_w + x] = (float)best_disparity_val/data->max_disp*255; 
         }
     }
 }
 
-void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputImage2, uint32_t *input1Integral, uint32_t *input2Integral, uint32_t *input1IntegralSquared, uint32_t *input2IntegralSquared, uint32_t *meanTable1, uint32_t *meanTable2, uint32_t *varTable1, uint32_t *varTable2, int img_h, int img_w, int win_size)
+void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputImage2, uint32_t *inputIntegralL, uint32_t *inputIntegralR, uint32_t *inputIntegralSquaredL, uint32_t *inputIntegralSquaredR, float *meanTableL, float *meanTableR, float *varTableL, float *varTableR, int img_h, int img_w, int win_size)
 {
     int n = (win_size/2);
     double best_zncc_score = 0;
@@ -72,17 +92,17 @@ void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputIm
             row_sum2_squared += pow(inputImage2[y * img_w + x],2);
             if(y==0)
             {
-                input1Integral[y*img_w + x] = row_sum1;
-                input2Integral[y*img_w + x] = row_sum2;
-                input1IntegralSquared[y*img_w + x] = row_sum1_squared;
-                input2IntegralSquared[y*img_w + x] = row_sum2_squared;
+                inputIntegralL[y*img_w + x] = row_sum1;
+                inputIntegralR[y*img_w + x] = row_sum2;
+                inputIntegralSquaredL[y*img_w + x] = row_sum1_squared;
+                inputIntegralSquaredR[y*img_w + x] = row_sum2_squared;
             }
             else
             {
-                input1Integral[y*img_w + x] = input1Integral[(y-1)*img_w + x] + row_sum1;
-                input2Integral[y*img_w + x] = input2Integral[(y-1)*img_w + x] + row_sum2;
-                input1IntegralSquared[y*img_w + x] = input1IntegralSquared[(y-1)*img_w + x] + row_sum1_squared;
-                input2IntegralSquared[y*img_w + x] = input2IntegralSquared[(y-1)*img_w + x] + row_sum2_squared;
+                inputIntegralL[y*img_w + x] = inputIntegralL[(y-1)*img_w + x] + row_sum1;
+                inputIntegralR[y*img_w + x] = inputIntegralR[(y-1)*img_w + x] + row_sum2;
+                inputIntegralSquaredL[y*img_w + x] = inputIntegralSquaredL[(y-1)*img_w + x] + row_sum1_squared;
+                inputIntegralSquaredR[y*img_w + x] = inputIntegralSquaredR[(y-1)*img_w + x] + row_sum2_squared;
                 
             }
 
@@ -92,10 +112,52 @@ void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputIm
     for (int y = n; y < img_h - n; y++)
         for (int x = n; x < img_w - n; x++)
         {
-            meanTable1[y * img_w + x] = (input1Integral[(y - n) * img_w + (x - n)] + input1Integral[y * img_w + x] - input1Integral[y * img_w + (x - n)] - input1Integral[(y - n) * img_w + x]) / win_size / win_size;
-            meanTable2[y * img_w + x] = (input2Integral[(y - n) * img_w + (x - n)] + input2Integral[y * img_w + x] - input2Integral[y * img_w + (x - n)] - input2Integral[(y - n) * img_w + x]) / win_size / win_size;
-            varTable1[y * img_w + x] = (input1IntegralSquared[(y - n) * img_w + (x - n)] + input1IntegralSquared[y * img_w + x] - input1IntegralSquared[y * img_w + (x - n)] - input1IntegralSquared[(y - n) * img_w + x]) / win_size / win_size - meanTable1[y * img_w + x] * meanTable1[y * img_w + x];
-            varTable2[y * img_w + x] = (input2IntegralSquared[(y - n) * img_w + (x - n)] + input2IntegralSquared[y * img_w + x] - input2IntegralSquared[y * img_w + (x - n)] - input2IntegralSquared[(y - n) * img_w + x]) / win_size / win_size - meanTable2[y * img_w + x] * meanTable2[y * img_w + x];
+            int y_idx_min = y - n - 1;
+            int x_idx_min = x - n - 1;
+            int y_idx_max = y + n;
+            int x_idx_max = x + n;
+
+            uint32_t S0_0L = inputIntegralL[y_idx_min * img_w + x_idx_min];
+            uint32_t S2_2L = inputIntegralL[y_idx_max * img_w + x_idx_max];
+            uint32_t S2_0L = inputIntegralL[y_idx_max * img_w + x_idx_min];
+            uint32_t S0_2L = inputIntegralL[y_idx_min * img_w + x_idx_max];
+            uint32_t SQ0_0L = inputIntegralSquaredL[y_idx_min * img_w + x_idx_min];
+            uint32_t SQ2_2L = inputIntegralSquaredL[y_idx_max * img_w + x_idx_max];
+            uint32_t SQ2_0L = inputIntegralSquaredL[y_idx_max * img_w + x_idx_min];
+            uint32_t SQ0_2L = inputIntegralSquaredL[y_idx_min * img_w + x_idx_max];
+
+            uint32_t S0_0R = inputIntegralR[y_idx_min * img_w + x_idx_min];
+            uint32_t S2_2R = inputIntegralR[y_idx_max * img_w + x_idx_max];
+            uint32_t S2_0R = inputIntegralR[y_idx_max * img_w + x_idx_min];
+            uint32_t S0_2R = inputIntegralR[y_idx_min * img_w + x_idx_max];
+            uint32_t SQ0_0R = inputIntegralSquaredR[y_idx_min * img_w + x_idx_min];
+            uint32_t SQ2_2R = inputIntegralSquaredR[y_idx_max * img_w + x_idx_max];
+            uint32_t SQ2_0R = inputIntegralSquaredR[y_idx_max * img_w + x_idx_min];
+            uint32_t SQ0_2R = inputIntegralSquaredR[y_idx_min * img_w + x_idx_max];
+
+            if((y_idx_min < 0) && (x_idx_min < 0))
+            {
+                S0_0L = 0;
+                SQ0_0L = 0;
+                S0_0R = 0;
+                SQ0_0R = 0;
+            }
+            else if((y_idx_min < 0) && !(x_idx_min < 0))
+            {
+                
+            }
+
+            if((y_idx_min < 0) || (x_idx_min < 0))
+            {
+                S0_0L = 0, S2_0L = 0,S0_2L = 0;
+                SQ0_0L = 0, SQ2_0L = 0,SQ0_2L = 0;
+                S0_0R = 0, S2_0R = 0,S0_2R = 0;
+                SQ0_0R = 0, SQ2_0R = 0,SQ0_2R = 0;
+            }
+            meanTableL[y * img_w + x] = (S2_2L + S0_0L - S2_0L - S0_2L) / (float)win_size / (float)win_size;
+            meanTableR[y * img_w + x] = (S2_2R + S0_0R - S2_0R - S0_2R)/ (float)win_size / (float)win_size;
+            varTableL[y * img_w + x] = (SQ2_2L + SQ0_0L - SQ2_0L - SQ0_2L)/ (float)win_size / (float)win_size - meanTableL[y * img_w + x] * meanTableL[y * img_w + x];
+            varTableR[y * img_w + x] = (SQ2_2R + SQ0_0R - SQ2_0R - SQ0_2R)/ (float)win_size / (float)win_size - meanTableR[y * img_w + x] * meanTableR[y * img_w + x];
     }
 }
 

@@ -59,7 +59,7 @@ int main(int argc, char ** argv){
     // Command line arguments handling
     if (argc > 1)
     {
-        for (int a = 2; a < argc; a++)
+        for (int a = 1; a < argc; a++)
         {
             //strcpy(arc_buff, argv[a]);
             //if (strcmp(arc_buff, "-w") == 0)
@@ -109,14 +109,14 @@ int main(int argc, char ** argv){
     unsigned char *readyOutputImg = (unsigned char *)calloc(WIDTH/4 * HEIGHT/4 , sizeof(BYTE));
     
     // Integral image tables
-    uint32_t *input1Integral = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
-    uint32_t *input2Integral = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
-    uint32_t *input1IntegralSquared = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
-    uint32_t *input2IntegralSquared = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
-    uint32_t *meanTable1 = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
-    uint32_t *meanTable2 = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
-    uint32_t *varTable1 = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
-    uint32_t *varTable2 = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
+    uint32_t *inputIntegralL = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
+    uint32_t *inputIntegralR = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
+    uint32_t *inputIntegralSquaredL = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
+    uint32_t *inputIntegralSquaredR = (uint32_t *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(uint32_t));
+    float *meanTableL = (float *)calloc(WIDTH/4 + 2 * HEIGHT/4 + 2, sizeof(float)); // +2 for added zero padding
+    float *meanTableR = (float *)calloc(WIDTH/4  + 2 * HEIGHT/4 + 2, sizeof(float));
+    float *varTable1 = (float *)calloc(WIDTH/4 + 2 * HEIGHT/4 + 2, sizeof(float));
+    float *varTable2 = (float *)calloc(WIDTH/4 + 2 * HEIGHT/4 + 2, sizeof(float));
     
     if (!inputImageLeft || !inputImageRight || !tinyGrayImageLeft || !tinyGrayImageRight || !grayInputImageLeft || !grayInputImageRight || !outputImageLeftD || !outputImageRightD){
         std::cout << "Failed to malloc a buffer for an image" << std::endl;
@@ -138,11 +138,28 @@ int main(int argc, char ** argv){
  
     gettimeofday(&t[1], NULL);
 
-    populate_integral_tables(tinyGrayImageLeft, tinyGrayImageRight, input1Integral, input2Integral, input1IntegralSquared, input2IntegralSquared, meanTable1, meanTable2, varTable1, varTable2, h/4, w/4, win_size);
+    /*
+    unsigned char testImageL[16] = {5, 2, 5, 2, 3, 6, 3, 6, 5, 2, 5, 2, 3, 6, 3, 6};
+    unsigned char testImageR[16] = {2, 5, 2, 6, 6, 3, 6, 3, 2, 5, 2, 6, 6, 3, 6, 3};
+    uint32_t *testInputIntL = (uint32_t *)malloc(16 * sizeof(uint32_t));
+    uint32_t *testInputIntR = (uint32_t *)malloc(16 * sizeof(uint32_t));
+    uint32_t *testInputIntSquaredL = (uint32_t *)malloc(16 * sizeof(uint32_t));
+    uint32_t *testInputIntSquaredR = (uint32_t *)malloc(16 * sizeof(uint32_t));
+    float *testMeanTableL = (float *)malloc(16 * sizeof(float));
+    float *testMeanTableR = (float *)malloc(16 * sizeof(float));
+    float *testVarTableL = (float *)malloc(16 * sizeof(float));
+    float *testVarTableR = (float *)malloc(16 * sizeof(float));
+    */
 
-    int num_threads = std::thread::hardware_concurrency();
+
+    //populate_integral_tables(testImageL, testImageR, testInputIntL , testInputIntR , testInputIntSquaredL , testInputIntSquaredR , testMeanTableL , testMeanTableR , testVarTableL , testVarTableR , 4, 4, 3);
+    populate_integral_tables(tinyGrayImageLeft, tinyGrayImageRight, inputIntegralL, inputIntegralR, inputIntegralSquaredL, inputIntegralSquaredR, meanTableL, meanTableR, varTable1, varTable2, h/4, w/4, win_size);
+
+    //int num_threads = std::thread::hardware_concurrency();
+    int num_threads = 2;
     ThreadData tdata[num_threads];
-    int rows_per_thread = h / 4 / num_threads;
+    //int rows_per_thread = ((h / 4) - (win_size - 1)) / num_threads;
+    int rows_per_thread = (h / 4)  / num_threads;
     
     std::vector<std::thread> threads1;
     for(int t = 0; t < num_threads; t++)
@@ -152,18 +169,20 @@ int main(int argc, char ** argv){
         tdata[t].window_size = win_size;
         tdata[t].max_disp = max_d_1;
         tdata[t].disp_sign = 1;
-        tdata[t].left = input1Integral;
-        tdata[t].right = input2Integral;
-        tdata[t].leftSquared = input1IntegralSquared;
-        tdata[t].rightSquared = input2IntegralSquared;
-        tdata[t].meanL = meanTable1;
-        tdata[t].meanR = meanTable2;
+        tdata[t].left = inputIntegralL;
+        tdata[t].right = inputIntegralR;
+        tdata[t].leftSquared = inputIntegralSquaredL;
+        tdata[t].rightSquared = inputIntegralSquaredR;
+        tdata[t].meanL = meanTableL;
+        tdata[t].meanR = meanTableR;
         tdata[t].varL = varTable1;
         tdata[t].varR = varTable2;
         tdata[t].disparity = outputImageLeftD;
 
+        //tdata[t].y_start = t * rows_per_thread + win_size - 1;
+        //tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h - win_size - 1 : (t+1)*rows_per_thread;
         tdata[t].y_start = t * rows_per_thread;
-        tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h : (t+1)*rows_per_thread;
+        tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h  : (t+1)*rows_per_thread;
 
         threads1.emplace_back(zncc_worker, &tdata[t]);
     }
@@ -180,17 +199,19 @@ int main(int argc, char ** argv){
         tdata[t].window_size = win_size;
         tdata[t].max_disp = max_d_1;
         tdata[t].disp_sign = -1;
-        tdata[t].left = input2Integral;
-        tdata[t].right = input1Integral;
-        tdata[t].leftSquared = input2IntegralSquared;
-        tdata[t].rightSquared = input1IntegralSquared;
-        tdata[t].meanL = meanTable2;
-        tdata[t].meanR = meanTable1;
+        tdata[t].left = inputIntegralR;
+        tdata[t].right = inputIntegralL;
+        tdata[t].leftSquared = inputIntegralSquaredR;
+        tdata[t].rightSquared = inputIntegralSquaredL;
+        tdata[t].meanL = meanTableR;
+        tdata[t].meanR = meanTableL;
         tdata[t].varL = varTable2;
         tdata[t].varR = varTable1;
         tdata[t].disparity = outputImageRightD;
 
 
+        //tdata[t].y_start = t * rows_per_thread + win_size - 1;
+        //tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h - win_size - 1 : (t+1)*rows_per_thread;
         tdata[t].y_start = t * rows_per_thread;
         tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h : (t+1)*rows_per_thread;
 
@@ -258,14 +279,26 @@ int main(int argc, char ** argv){
     free(grayInputImageRight);
     free(outputImageRightD);
     free(readyOutputImg);
-    free(input1Integral);
-    free(input2Integral);
-    free(input1IntegralSquared);
-    free(input2IntegralSquared);
-    free(meanTable1);
-    free(meanTable2);
+    free(inputIntegralL);
+    free(inputIntegralR);
+    free(inputIntegralSquaredL);
+    free(inputIntegralSquaredR);
+    free(meanTableL);
+    free(meanTableR);
     free(varTable1);
     free(varTable2);
+
+
+    /*
+    free(testInputIntL);
+    free(testInputIntR);
+    free(testInputIntSquaredL);
+    free(testInputIntSquaredR);
+    free(testMeanTableL);
+    free(testMeanTableR);
+    free(testVarTableL);
+    free(testVarTableR);
+    */
 
     // Profiling
     long seconds_1 = t[1].tv_sec - t[0].tv_sec;

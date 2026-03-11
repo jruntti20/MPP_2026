@@ -23,11 +23,11 @@ struct ThreadData
     uint32_t *leftSquared;
     uint32_t *rightSquared;
 
-    uint32_t *meanL;
-    uint32_t *meanR;
+    float *meanL;
+    float *meanR;
 
-    uint32_t *varL;
-    uint32_t *varR;
+    float *varL;
+    float *varR;
 
     unsigned char *disparity;
 
@@ -35,7 +35,7 @@ struct ThreadData
 
 void zncc_worker(ThreadData *data);
 
-void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputImage2, uint32_t *input1Integral, uint32_t *input2Integral, uint32_t *input1IntegralSquared, uint32_t *input2IntegralSquared, uint32_t *meanTable1, uint32_t *meanTable2, uint32_t *varTable1, uint32_t *varTable2, int img_h, int img_w, int win_size);
+void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputImage2, uint32_t *inputIntegralL, uint32_t *inputIntegralR, uint32_t *inputIntegralSquaredL, uint32_t *inputIntegralSquaredR, float *meanTableL, float *meanTableR, float *varTableL, float *varTableR, int img_h, int img_w, int win_size);
 
 
 #endif
