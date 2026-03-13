@@ -28,15 +28,20 @@ struct timeval pixeltime[2];
 
 unsigned long loop_counter = 0;
 
+void inline print_help()
+{
+    printf("./main [-w] [windows sizse] [-d] [maximum disparity] [-t] [cross checking threshold] [-ow] [occlusion filling window size]\n");
+}
+
 void inline arg_error(char *endptr, char *argv_a)
 {
     if(endptr == argv_a  || *endptr != '\0' || errno == ERANGE)
     {
-        printf("Please provide a valid integer as a parameter for %s.\n", argv_a);
+        printf("Please provide a valid integer as a parameter for %s.\n\n", argv_a);
+        print_help();
         exit(1);
     }
 }
-
 
 void pad_image_1px(
     const unsigned char* src,
@@ -45,9 +50,6 @@ void pad_image_1px(
     unsigned char* dst)
 {
     int padded_width = width + 2;
-
-    // initialize entire padded image to zero
-    //memset(dst, 0, (width + 2) * (height + 2) * sizeof(unsigned char));
 
     // copy original image into center
     for(int y = 0; y < height; y++)
@@ -83,8 +85,6 @@ int main(int argc, char ** argv){
     {
         for (int a = 1; a < argc; a++)
         {
-            //strcpy(arc_buff, argv[a]);
-            //if (strcmp(arc_buff, "-w") == 0)
             if (strcmp(argv[a], "-w") == 0)
             {
                 win_size = strtol(argv[a + 1], &endptr, 10);
@@ -98,7 +98,7 @@ int main(int argc, char ** argv){
                 arg_error(endptr, argv[a]);
                 a++;
             }
-            else if (strcmp(argv[a], "-c") == 0)
+            else if (strcmp(argv[a], "-t") == 0)
             {
                 threshold_val = strtol(argv[a + 1], &endptr, 10); 
                 arg_error(endptr, argv[a]);
@@ -110,14 +110,13 @@ int main(int argc, char ** argv){
                 arg_error(endptr, argv[a]);
                 a++;
             }
+            else if (strcmp(argv[a], "-h") == 0)
+            {
+                print_help();
+            }
         }
     }
     
-
-    /* TODO: Commandline argument parsing, if I have time*/
-
-    // Source image path.
-
     // define output image and size.
     unsigned char *inputImageLeft = (unsigned char *)malloc(WIDTH * HEIGHT * 4 * sizeof(BYTE)); 
     unsigned char *inputImageRight = (unsigned char *)malloc(WIDTH * HEIGHT * 4 * sizeof(BYTE)); 
@@ -139,6 +138,7 @@ int main(int argc, char ** argv){
     uint32_t *inputIntegralR = (uint32_t *)calloc((WIDTH/4 + 2) * (HEIGHT/4 + 2), sizeof(uint32_t));
     uint64_t *inputIntegralSquaredL = (uint64_t *)calloc((WIDTH/4 + 2) * (HEIGHT/4 + 2), sizeof(uint64_t));
     uint64_t *inputIntegralSquaredR = (uint64_t *)calloc((WIDTH/4 + 2) * (HEIGHT/4 + 2), sizeof(uint64_t));
+    uint32_t *inputIntegralDot = (uint32_t *)calloc((WIDTH/4 + 2) * (HEIGHT/4 + 2), sizeof(uint32_t));
 
     float *meanTableL = (float *)calloc((WIDTH/4 + 2) * (HEIGHT/4 + 2) , sizeof(float));
     float *meanTableR = (float *)calloc((WIDTH/4 + 2) * (HEIGHT/4 + 2) , sizeof(float));
@@ -160,9 +160,6 @@ int main(int argc, char ** argv){
     resizeImage(grayInputImageLeft, tinyGrayImageLeft, w, h);
     resizeImage(grayInputImageRight, tinyGrayImageRight, w, h);
 
-
-
-
     pad_image_1px(tinyGrayImageLeft, w/4, h/4, tinyGrayImageLeftPadded);
     pad_image_1px(tinyGrayImageRight, w/4, h/4, tinyGrayImageRightPadded);
 
@@ -171,94 +168,16 @@ int main(int argc, char ** argv){
 
     lodepng_encode_file("../grayscale_image_left.png", grayInputImageLeft, w, h, LCT_GREY, 8);
     lodepng_encode_file("../tiny_image_left_padded.png", tinyGrayImageLeftPadded, w/4 + 2, h/4 + 2, LCT_GREY, 8);
- 
+    lodepng_encode_file("../tiny_image_right_padded.png", tinyGrayImageRightPadded, w/4 + 2, h/4 + 2, LCT_GREY, 8);
+
     gettimeofday(&t[1], NULL);
 
-    /*
-    */
-    unsigned char testImageL[16] = {5, 2, 5, 2, 3, 6, 3, 6, 5, 2, 5, 2, 3, 6, 3, 6};
-    unsigned char testImageR[16] = {2, 5, 2, 6, 6, 3, 6, 3, 2, 5, 2, 6, 6, 3, 6, 3};
-    unsigned char *testImagePaddedL = (unsigned char*)calloc((4+2) * (4+2), sizeof(unsigned char));
-    unsigned char *testImagePaddedR = (unsigned char*)calloc((4+2) * (4+2), sizeof(unsigned char));
+    populate_integral_tables(tinyGrayImageLeftPadded, tinyGrayImageRightPadded, inputIntegralL, inputIntegralR, inputIntegralSquaredL, inputIntegralSquaredR, meanTableL, meanTableR, varTable1, varTable2, h/4 + 2, w/4 + 2, win_size);
 
-    pad_image_1px(testImageL, 4, 4, testImagePaddedL);
-    pad_image_1px(testImageR, 4, 4, testImagePaddedR);
-
-
-    uint32_t *testInputIntL = (uint32_t *)calloc((4+2) * (4+2), sizeof(uint32_t));
-    uint32_t *testInputIntR = (uint32_t *)calloc((4+2) * (4+2), sizeof(uint32_t));
-    uint64_t *testInputIntSquaredL = (uint64_t *)calloc((4+2) * (4+2), sizeof(uint64_t));
-    uint64_t *testInputIntSquaredR = (uint64_t *)calloc((4+2) * (4+2), sizeof(uint64_t));
-    float *testMeanTableL = (float *)calloc((4+2) * (4+2), sizeof(float));
-    float *testMeanTableR = (float *)calloc((4+2) * (4+2), sizeof(float));
-    float *testVarTableL = (float *)calloc((4+2) * (4+2), sizeof(float));
-    float *testVarTableR = (float *)calloc((4+2) * (4+2), sizeof(float));
-
-    int padded_width = 6; 
-    int padded_height = 6;
-
-    populate_integral_tables(testImagePaddedL , testImagePaddedR , testInputIntL , testInputIntR , testInputIntSquaredL , testInputIntSquaredR , testMeanTableL , testMeanTableR , testVarTableL , testVarTableR , padded_height , padded_width , 3);
-    printf("Original testImageL:\n");
-    for(int y = 0; y < 4 ; y++)
-    {
-        for(int x = 0; x < 4 ; x++)
-        {
-            printf(" %u",testImageL[y * 4 + x]);
-        }
-        printf("\n");
-    }
-    printf("Padded testImageL:\n");
-    for(int y = 0; y < padded_height ; y++)
-    {
-        for(int x = 0; x < padded_width ; x++)
-        {
-            printf(" %u",testImagePaddedL[y * padded_width + x]);
-        }
-        printf("\n");
-    }
-    printf("Integral image testImageL:\n");
-    for(int y = 0; y < padded_height ; y++)
-    {
-        for(int x = 0; x < padded_width ; x++)
-        {
-            printf("%lu ",(unsigned long)testInputIntL[y * padded_width + x]);
-        }
-        printf("\n");
-    }
-    printf("Squared integral image testImageL:\n");
-    for(int y = 0; y < padded_height ; y++)
-    {
-        for(int x = 0; x < padded_width ; x++)
-        {
-            printf("%llu ",(unsigned long long)testInputIntSquaredL[y * padded_width + x]);
-        }
-        printf("\n");
-    }
-    printf("MeanTableL:\n");
-    for(int y = 0; y < padded_height ; y++)
-    {
-        for(int x = 0; x < padded_width ; x++)
-        {
-            printf("%f ",testMeanTableL[y * padded_width + x]);
-        }
-        printf("\n");
-    }
-    printf("VarTableL:\n");
-    for(int y = 0; y < padded_height ; y++)
-    {
-        for(int x = 0; x < padded_width ; x++)
-        {
-            printf("%f ",testVarTableL[y * padded_width + x]);
-        }
-        printf("\n");
-    }
-    //populate_integral_tables(tinyGrayImageLeftPadded, tinyGrayImageRightPadded, inputIntegralL, inputIntegralR, inputIntegralSquaredL, inputIntegralSquaredR, meanTableL, meanTableR, varTable1, varTable2, h/4 + 2, w/4 + 2, win_size);
-
-    //int num_threads = std::thread::hardware_concurrency();
-    int num_threads = 1;
+    int num_threads = std::thread::hardware_concurrency();
     ThreadData tdata[num_threads];
-    //int rows_per_thread = ((h / 4) - (win_size - 1)) / num_threads;
-    int rows_per_thread = (h / 4 + 2)  / num_threads;
+    int num_rows_processed = h / 4 + 2;
+    int rows_per_thread = num_rows_processed / num_threads;
     
     std::vector<std::thread> threads1;
     for(int t = 0; t < num_threads; t++)
@@ -268,18 +187,18 @@ int main(int argc, char ** argv){
         tdata[t].window_size = win_size;
         tdata[t].max_disp = max_d_1;
         tdata[t].disp_sign = 1;
-        tdata[t].left = inputIntegralL;
-        tdata[t].right = inputIntegralR;
-        tdata[t].leftSquared = inputIntegralSquaredL;
-        tdata[t].rightSquared = inputIntegralSquaredR;
+        tdata[t].left = tinyGrayImageLeftPadded;
+        tdata[t].right = tinyGrayImageRightPadded;
+        tdata[t].leftIntegral = inputIntegralL;
+        tdata[t].rightIntegral = inputIntegralR;
+        tdata[t].leftIntegralSquared = inputIntegralSquaredL;
+        tdata[t].rightIntegralSquared = inputIntegralSquaredR;
         tdata[t].meanL = meanTableL;
         tdata[t].meanR = meanTableR;
         tdata[t].varL = varTable1;
         tdata[t].varR = varTable2;
         tdata[t].disparity = outputImageLeftD;
 
-        //tdata[t].y_start = t * rows_per_thread + win_size - 1;
-        //tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h - win_size - 1 : (t+1)*rows_per_thread;
         tdata[t].y_start = t * rows_per_thread;
         tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h  : (t+1)*rows_per_thread;
 
@@ -298,19 +217,18 @@ int main(int argc, char ** argv){
         tdata[t].window_size = win_size;
         tdata[t].max_disp = max_d_1;
         tdata[t].disp_sign = -1;
-        tdata[t].left = inputIntegralR;
-        tdata[t].right = inputIntegralL;
-        tdata[t].leftSquared = inputIntegralSquaredR;
-        tdata[t].rightSquared = inputIntegralSquaredL;
+        tdata[t].left = tinyGrayImageRightPadded;
+        tdata[t].right = tinyGrayImageLeftPadded;
+        tdata[t].leftIntegral = inputIntegralR;
+        tdata[t].rightIntegral = inputIntegralL;
+        tdata[t].leftIntegralSquared = inputIntegralSquaredR;
+        tdata[t].rightIntegralSquared = inputIntegralSquaredL;
         tdata[t].meanL = meanTableR;
         tdata[t].meanR = meanTableL;
         tdata[t].varL = varTable2;
         tdata[t].varR = varTable1;
         tdata[t].disparity = outputImageRightD;
 
-
-        //tdata[t].y_start = t * rows_per_thread + win_size - 1;
-        //tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h - win_size - 1 : (t+1)*rows_per_thread;
         tdata[t].y_start = t * rows_per_thread;
         tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h : (t+1)*rows_per_thread;
 
@@ -322,25 +240,6 @@ int main(int argc, char ** argv){
     }
 
 
-
-    //zncc_integral(tinyGrayImageLeft,tinyGrayImageRight,outputImageLeftD, w/4, h/4, win_size, min_d_1, max_d_1, &loop_counter);    
-
-
-    /*
-    for (unsigned int u = 0; u < h/4; u++)
-    {
-        for (unsigned int v = 0; v < w/4; v++)
-        {
-            if (((int) u - (win_size -1)/2 < 0) || ((int) u + (win_size -1)/2 >= (int)h/4) || ((int) v - (win_size -1)/2 < 0) || ((int) v + (win_size -1)/2 >= (int)w/4))
-            {
-                continue;
-            }
-            
-            zncc(tinyGrayImageLeft,tinyGrayImageRight,outputImageLeftD, u, v, w/4, h/4, win_size, min_d_1, max_d_1, &loop_counter);
-            zncc(tinyGrayImageRight,tinyGrayImageLeft,outputImageRightD, u, v, w/4, h/4, win_size, min_d_2, max_d_2, &loop_counter);
-        }
-    }
-    */
     gettimeofday(&t[2], NULL);
     char filename_left_disp[128];
     char filename_right_disp[128];
@@ -382,22 +281,12 @@ int main(int argc, char ** argv){
     free(inputIntegralR);
     free(inputIntegralSquaredL);
     free(inputIntegralSquaredR);
+    free(inputIntegralDot);
     free(meanTableL);
     free(meanTableR);
     free(varTable1);
     free(varTable2);
 
-
-    /*
-    */
-    free(testInputIntL);
-    free(testInputIntR);
-    free(testInputIntSquaredL);
-    free(testInputIntSquaredR);
-    free(testMeanTableL);
-    free(testMeanTableR);
-    free(testVarTableL);
-    free(testVarTableR);
 
     // Profiling
     long seconds_1 = t[1].tv_sec - t[0].tv_sec;

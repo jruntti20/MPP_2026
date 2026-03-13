@@ -18,10 +18,14 @@ struct ThreadData
     int max_disp;
     int disp_sign;
 
-    uint32_t *left;
-    uint32_t *right;
-    uint64_t *leftSquared;
-    uint64_t *rightSquared;
+    unsigned char *left;
+    unsigned char *right;
+
+    uint32_t *leftIntegral;
+    uint32_t *rightIntegral;
+
+    uint64_t *leftIntegralSquared;
+    uint64_t *rightIntegralSquared;
 
     float *meanL;
     float *meanR;

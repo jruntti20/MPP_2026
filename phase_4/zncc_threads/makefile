@@ -1,6 +1,6 @@
 CC=g++
-#CFLAGS=-g -Wall -O2
-CFLAGS=-g -Wall -O0
+CFLAGS=-g -Wall -O2
+#CFLAGS=-g -Wall -O0
 #LIB = -L /opt/cuda/lib64 -lOpenCL
 #INC = -I /opt/cuda/include
 

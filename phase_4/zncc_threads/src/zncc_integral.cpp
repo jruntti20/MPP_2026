@@ -1,62 +1,68 @@
 #include "getAverage.h"
 #include "zncc_integral.h"
 
+template <typename T> T get_window_sum(T *integralImage, int img_w, int x, int y, int r)
+{
+    T A = integralImage[(y - r - 1) * img_w + (x - r - 1)];
+    T B = integralImage[(y - r - 1) * img_w + (x + r)];
+    T C = integralImage[(y + r) * img_w + (x - r - 1)];
+    T D = integralImage[(y + r) * img_w + (x + r)];
+
+    return D - B - C + A;
+}
+
 void zncc_worker(ThreadData *data)
 {
-    //int r = data->window_size;
-    //int N = (2*r+1)*(2*r+1);
-    int r = data->window_size / 2 - 1;
-    int N = data->window_size * data->window_size;;
+    int r = data->window_size / 2;
+    int N = data->window_size * data->window_size;
 
     for(int y = data->y_start; y < data->y_end; y++)
     {
+        if (y == 0 || y == data->img_h - 1)
+        {
+            continue; // Exclude padded edges
+        }
         for(int x = r; x < data->img_w - r; x++)
         {
-            float best_zncc_score = 0;
+            if (x - r == 0 || x + r == data->img_w - 1)
+            {
+                continue; // Exclude padded edges
+            }
+            float best_zncc_score = -1.0f;
             unsigned int best_disparity_val = 0;
 
-            //float avg1 = data->meanL[(y + r) * data->img_w + (x + r)];
+            float meanA = data->meanL[y * data->img_w + x];
+            float varA = data->varL[y * data->img_w + x];
+            if(varA < 1e-6f) continue;
 
             for (int d = 0; d < data->max_disp; d++)
             {
-                
-                //float avg2 = data->meanR[(y + r) * data->img_w + (x + r - (d * data->disp_sign))]; 
-                //float zncc_score = 0;
-                //float left_pix_diff = 0;
-                //float right_pix_diff = 0;
-                //float upper_sum = 0;
-                //float lower_sum_0 = 0;
-                //float lower_sum_1 = 0;
+                int xr = x - d * data->disp_sign;
+                if (xr - r < 0 || xr + r >= data->img_w)
+                {
+                    continue;
+                }
+
+                float meanB = data->meanR[y * data->img_w + xr];
+                float varB = data->varR[y * data->img_w + xr];
+                if(varB < 1e-6f) continue;
 
                 float dot = 0.0f;
+
                 for (int j = -r; j <= r; j++)
                 {
                     for (int i = -r; i <= r; i++)
                     {
 
-                        
-                        ////Borders checking
-                        //if (!(x+i-(d*data->disp_sign) >= 0) || !(x+i-(d * data->disp_sign) < data->img_w)){
-                        //    continue;
-                        //}
-                        
-
-
                         float a = data->left[(y+j)*data->img_w + x + i];
-                        float b = data->right[(y+j)*data->img_w + x + i - (d * data->disp_sign)];
+                        float b = data->right[(y+j)*data->img_w + xr + i];
 
                         dot += a*b;
                     }
                 }
 
-                float meanA = data->meanL[y*data->img_w + x];
-                float meanB = data->meanR[y*data->img_w + x - (d * data->disp_sign)];
-
-                float varA = data->varL[y*data->img_w + x];
-                float varB = data->varR[y*data->img_w + x - (d * data->disp_sign)];
-
                 float numerator = dot - N * meanA * meanB;
-                float denom = sqrt(N * varA * N * varB);
+                float denom = sqrt(varA * varB) * N + 1e-6f;
 
                 float zncc = numerator / denom;
 
@@ -68,7 +74,7 @@ void zncc_worker(ThreadData *data)
 
             }
 
-            data->disparity[y*data->img_w + x] = (float)best_disparity_val/data->max_disp*255; 
+            data->disparity[y*data->img_w + x] = best_disparity_val; 
         }
     }
 }
@@ -76,7 +82,6 @@ void zncc_worker(ThreadData *data)
 void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputImage2, uint32_t *inputIntegralL, uint32_t *inputIntegralR, uint64_t *inputIntegralSquaredL, uint64_t *inputIntegralSquaredR, float *meanTableL, float *meanTableR, float *varTableL, float *varTableR, int img_h, int img_w, int win_size)
 {
     int n = (win_size/2);
-    double best_zncc_score = 0;
 
     for (int y = 0; y < img_h; y++)
     {
@@ -90,12 +95,14 @@ void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputIm
             row_sum2 += inputImage2[y * img_w + x];
             row_sum1_squared += (inputImage1[y * img_w + x] * inputImage1[y * img_w + x]) ;
             row_sum2_squared += (inputImage2[y * img_w + x] * inputImage2[y * img_w + x]);
+            
             if(y==0)
             {
                 inputIntegralL[y*img_w + x] = row_sum1;
                 inputIntegralR[y*img_w + x] = row_sum2;
                 inputIntegralSquaredL[y*img_w + x] = row_sum1_squared;
                 inputIntegralSquaredR[y*img_w + x] = row_sum2_squared;
+                
             }
             else
             {
@@ -103,17 +110,16 @@ void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputIm
                 inputIntegralR[y*img_w + x] = inputIntegralR[(y-1)*img_w + x] + row_sum2;
                 inputIntegralSquaredL[y*img_w + x] = inputIntegralSquaredL[(y-1)*img_w + x] + row_sum1_squared;
                 inputIntegralSquaredR[y*img_w + x] = inputIntegralSquaredR[(y-1)*img_w + x] + row_sum2_squared;
-                
             }
 
         }
     }
 
-    for (int y = n; y < img_h - n; y++)
-        for (int x = n; x < img_w - n; x++)
+    for (int y = n + 1; y < img_h - n - 1; y++)
+        for (int x = n + 1; x < img_w - n - 1; x++)
         {
-            int y_idx_min = y - n;
-            int x_idx_min = x - n;
+            int y_idx_min = y - n - 1;
+            int x_idx_min = x - n - 1;
             int y_idx_max = y + n;
             int x_idx_max = x + n;
 
