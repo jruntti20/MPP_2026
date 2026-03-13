@@ -1,9 +1,19 @@
 #include <CL/cl.h>
 #include <stdlib.h>
 #include <iostream>
+#include <time.h>
 
 #include "mat_mul.h"
+
 #define CL_HPP_TARGET_OPENCL_VERSION 300
+
+#define CHECK_ERROR(err, msg) if(err != CL_SUCCESS){printf("%s (%d)\n", msg, err); exit(1);}
+
+double current_time_ms() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec*1000.0 + ts.tv_nsec/1e6;
+}
 
 int main(int argc, char* argv[])
 {

@@ -9,3 +9,15 @@ phase_2/mat_mul_c/src/tags
 phase_2/mat_mul_openCL/bin/
 phase_2/mat_mul_openCL/obj/
 phase_2/mat_mul_openCL/src/tags
+
+phase_3/zncc_c/bin/
+phase_3/zncc_c/obj/
+phase_3/zncc_c/Output_images/
+phase_3/zncc_c/img/
+phase_3/zncc_c/src/tags
+phase_3/zncc_c/src/dev/
+phase_3/zncc_c/src/*.gch
+phase_3/zncc_c/src/.cache/
+
+
+
