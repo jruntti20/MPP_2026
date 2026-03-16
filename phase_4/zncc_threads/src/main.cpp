@@ -66,8 +66,6 @@ int main(int argc, char ** argv){
     int win_size = 23;
     int min_d_1 = 0;
     int max_d_1 = 65;
-    int min_d_2 = max_d_1 * (-1);
-    int max_d_2 = 0;
     int threshold_val = 8;
     int occlusion_window = 50;
 
@@ -94,7 +92,6 @@ int main(int argc, char ** argv){
             else if (strcmp(argv[a], "-d") == 0)
             {
                 max_d_1 = strtol(argv[a + 1], &endptr, 10);
-                min_d_2 = (-1) * max_d_1;
                 arg_error(endptr, argv[a]);
                 a++;
             }

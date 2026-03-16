@@ -127,19 +127,19 @@ void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputIm
             uint32_t S2_2L = inputIntegralL[y_idx_max * img_w + x_idx_max];
             uint32_t S2_0L = inputIntegralL[y_idx_max * img_w + x_idx_min];
             uint32_t S0_2L = inputIntegralL[y_idx_min * img_w + x_idx_max];
-            uint32_t SQ0_0L = inputIntegralSquaredL[y_idx_min * img_w + x_idx_min];
-            uint32_t SQ2_2L = inputIntegralSquaredL[y_idx_max * img_w + x_idx_max];
-            uint32_t SQ2_0L = inputIntegralSquaredL[y_idx_max * img_w + x_idx_min];
-            uint32_t SQ0_2L = inputIntegralSquaredL[y_idx_min * img_w + x_idx_max];
+            uint64_t SQ0_0L = inputIntegralSquaredL[y_idx_min * img_w + x_idx_min];
+            uint64_t SQ2_2L = inputIntegralSquaredL[y_idx_max * img_w + x_idx_max];
+            uint64_t SQ2_0L = inputIntegralSquaredL[y_idx_max * img_w + x_idx_min];
+            uint64_t SQ0_2L = inputIntegralSquaredL[y_idx_min * img_w + x_idx_max];
 
             uint32_t S0_0R = inputIntegralR[y_idx_min * img_w + x_idx_min];
             uint32_t S2_2R = inputIntegralR[y_idx_max * img_w + x_idx_max];
             uint32_t S2_0R = inputIntegralR[y_idx_max * img_w + x_idx_min];
             uint32_t S0_2R = inputIntegralR[y_idx_min * img_w + x_idx_max];
-            uint32_t SQ0_0R = inputIntegralSquaredR[y_idx_min * img_w + x_idx_min];
-            uint32_t SQ2_2R = inputIntegralSquaredR[y_idx_max * img_w + x_idx_max];
-            uint32_t SQ2_0R = inputIntegralSquaredR[y_idx_max * img_w + x_idx_min];
-            uint32_t SQ0_2R = inputIntegralSquaredR[y_idx_min * img_w + x_idx_max];
+            uint64_t SQ0_0R = inputIntegralSquaredR[y_idx_min * img_w + x_idx_min];
+            uint64_t SQ2_2R = inputIntegralSquaredR[y_idx_max * img_w + x_idx_max];
+            uint64_t SQ2_0R = inputIntegralSquaredR[y_idx_max * img_w + x_idx_min];
+            uint64_t SQ0_2R = inputIntegralSquaredR[y_idx_min * img_w + x_idx_max];
 
             meanTableL[y * img_w + x] = (S2_2L + S0_0L - S2_0L - S0_2L) / (float)win_size / (float)win_size;
             meanTableR[y * img_w + x] = (S2_2R + S0_0R - S2_0R - S0_2R)/ (float)win_size / (float)win_size;
