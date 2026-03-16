@@ -28,8 +28,8 @@ std::string loadKernelSource(const char* filename)
 
 int main()
 {
-    const char imgPathLeft[] = "im0.png";
-    const char imgPathRight[] = "im1.png";
+    const char imgPathLeft[] = "../img/im0.png";
+    const char imgPathRight[] = "../img/im1.png";
 
     unsigned int w = WIDTH;
     unsigned int h = HEIGHT;
@@ -127,7 +127,7 @@ int main()
         output1[i*4+2]=d;
         output1[i*4+3]=255;
     }
-    lodepng_encode32_file("depth1.png",output1.data(),w,h);
+    lodepng_encode32_file("../Output_images/depth1.png",output1.data(),w,h);
     std::cout<<"Depth map 1 saved\n";
 
     /* ---------- KERNEL 2 CPU STYLE ---------- */
@@ -177,7 +177,7 @@ int main()
         output2[i*4+2]=d;
         output2[i*4+3]=255;
     }
-    lodepng_encode32_file("depth2.png",output2.data(),w,h);
+    lodepng_encode32_file("../Output_images/depth2.png",output2.data(),w,h);
     std::cout<<"Depth map 2 saved\n";
 
     /* ---------- CLEANUP ---------- */
