@@ -5,6 +5,7 @@ __kernel void zncc_fast(
     __global uchar* left,
     __global uchar* right,
     __global uchar* disparity,
+    int disp_sign,
     int width,
     int height)
 {
@@ -30,7 +31,7 @@ __kernel void zncc_fast(
         {
             int xl=x+wx;
             int yl=y+wy;
-            int xr=xl-d;
+            int xr=xl-(d*disp_sign);
 
             int idxL=((yl*width+xl)*4);
             int idxR=((yl*width+xr)*4);
@@ -70,5 +71,5 @@ __kernel void zncc_fast(
         }
     }
 
-    disparity[y*width+x] = best_d * 255 / MAX_DISPARITY;
+    disparity[y*width+x] = abs(best_d) * 255 / MAX_DISPARITY;
 }

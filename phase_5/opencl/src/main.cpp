@@ -14,7 +14,9 @@ typedef unsigned char BYTE;
 
 std::string loadKernelSource(const char* filename)
 {
-    std::ifstream file(filename);
+    std::string src_path("../src/");
+    src_path.append(filename);
+    std::ifstream file(src_path);
     if(!file.is_open())
     {
         std::cerr << "Failed to open kernel file: " << filename << std::endl;
@@ -34,8 +36,11 @@ int main()
     unsigned int w = WIDTH;
     unsigned int h = HEIGHT;
 
-    unsigned char* inputImageLeft = NULL;
-    unsigned char* inputImageRight = NULL;
+    //unsigned char* inputImageLeft = NULL;
+    //unsigned char* inputImageRight = NULL;
+
+    unsigned char* inputImageLeft = (unsigned char*)malloc(w * h * 4 * sizeof(unsigned char));
+    unsigned char* inputImageRight = (unsigned char*)malloc(w * h * 4 * sizeof(unsigned char));
 
     unsigned error;
 
@@ -83,10 +88,14 @@ int main()
     size_t imageSize = w*h*CHANNELS;
     cl_mem leftBuffer = clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,imageSize,inputImageLeft,&err);
     cl_mem rightBuffer = clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,imageSize,inputImageRight,&err);
-    std::vector<unsigned char> disparity(w*h);
+    std::vector<unsigned char> disparityL(w*h);
+    std::vector<unsigned char> disparityR(w*h);
+
     cl_mem disparityBuffer = clCreateBuffer(context,CL_MEM_WRITE_ONLY,w*h*sizeof(unsigned char),NULL,&err);
 
     size_t global[2] = {w,h};
+
+    int disp_sign = 1;
 
     /* ---------- KERNEL 1 FAST ---------- */
 
@@ -110,18 +119,19 @@ int main()
     clSetKernelArg(kernel1,0,sizeof(cl_mem),&leftBuffer);
     clSetKernelArg(kernel1,1,sizeof(cl_mem),&rightBuffer);
     clSetKernelArg(kernel1,2,sizeof(cl_mem),&disparityBuffer);
-    clSetKernelArg(kernel1,3,sizeof(int),&w);
-    clSetKernelArg(kernel1,4,sizeof(int),&h);
+    clSetKernelArg(kernel1,3,sizeof(int),&disp_sign);
+    clSetKernelArg(kernel1,4,sizeof(int),&w);
+    clSetKernelArg(kernel1,5,sizeof(int),&h);
 
     clEnqueueNDRangeKernel(queue,kernel1,2,NULL,global,NULL,0,NULL,NULL);
     clFinish(queue);
 
-    clEnqueueReadBuffer(queue,disparityBuffer,CL_TRUE,0,w*h*sizeof(unsigned char),disparity.data(),0,NULL,NULL);
+    clEnqueueReadBuffer(queue,disparityBuffer,CL_TRUE,0,w*h*sizeof(unsigned char),disparityL.data(),0,NULL,NULL);
 
     std::vector<unsigned char> output1(w*h*4);
     for(int i=0;i<w*h;i++)
     {
-        unsigned char d=disparity[i];
+        unsigned char d=disparityL[i];
         output1[i*4+0]=d;
         output1[i*4+1]=d;
         output1[i*4+2]=d;
@@ -131,7 +141,7 @@ int main()
     std::cout<<"Depth map 1 saved\n";
 
     /* ---------- KERNEL 2 CPU STYLE ---------- */
-
+    /*
     std::string kernelSource2 = loadKernelSource("kernel_cpu.cl");
     const char* src2 = kernelSource2.c_str();
     size_t src2size = kernelSource2.length();
@@ -163,15 +173,28 @@ int main()
     clSetKernelArg(kernel2,6,sizeof(int),&min_d);
     clSetKernelArg(kernel2,7,sizeof(int),&max_d);
 
-    clEnqueueNDRangeKernel(queue,kernel2,2,NULL,global,NULL,0,NULL,NULL);
+    */
+
+    disp_sign = -1;
+
+    kernel1 = clCreateKernel(program1,"zncc_fast",&err);
+    clSetKernelArg(kernel1,0,sizeof(cl_mem),&rightBuffer);
+    clSetKernelArg(kernel1,1,sizeof(cl_mem),&leftBuffer);
+    clSetKernelArg(kernel1,2,sizeof(cl_mem),&disparityBuffer);
+    clSetKernelArg(kernel1,3,sizeof(int),&disp_sign);
+    clSetKernelArg(kernel1,4,sizeof(int),&w);
+    clSetKernelArg(kernel1,5,sizeof(int),&h);
+    
+
+    clEnqueueNDRangeKernel(queue,kernel1,2,NULL,global,NULL,0,NULL,NULL);
     clFinish(queue);
 
-    clEnqueueReadBuffer(queue,disparityBuffer,CL_TRUE,0,w*h*sizeof(unsigned char),disparity.data(),0,NULL,NULL);
+    clEnqueueReadBuffer(queue,disparityBuffer,CL_TRUE,0,w*h*sizeof(unsigned char),disparityR.data(),0,NULL,NULL);
 
     std::vector<unsigned char> output2(w*h*4);
     for(int i=0;i<w*h;i++)
     {
-        unsigned char d=disparity[i];
+        unsigned char d=disparityR[i];
         output2[i*4+0]=d;
         output2[i*4+1]=d;
         output2[i*4+2]=d;
@@ -183,8 +206,8 @@ int main()
     /* ---------- CLEANUP ---------- */
     clReleaseKernel(kernel1);
     clReleaseProgram(program1);
-    clReleaseKernel(kernel2);
-    clReleaseProgram(program2);
+    //clReleaseKernel(kernel2);
+    //clReleaseProgram(program2);
     clReleaseMemObject(leftBuffer);
     clReleaseMemObject(rightBuffer);
     clReleaseMemObject(disparityBuffer);
