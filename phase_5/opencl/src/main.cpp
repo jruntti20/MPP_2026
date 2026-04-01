@@ -1,9 +1,23 @@
-#include <iostream>
-#include <fstream>
-#include <vector>
-#include <CL/cl.h>
-#include "lodepng.h"
-#include <sys/time.h>
+
+#ifdef __linux__ 
+    #include <filesystem>
+    #include <iostream>
+    #include <fstream>
+    #include <vector>
+    #include <CL/cl.h>
+    #include "lodepng.h"
+    #include <sys/time.h>
+    //linux code goes here
+#elif _WIN32
+    #include <filesystem>
+    #include <iostream>
+    #include <fstream>
+    #include <vector>
+    #include <CL/cl.h>
+    #include "lodepng.h"
+    #include "sys/time.h"
+    // windows code goes here
+#endif
 
 #define WIDTH 2940
 #define HEIGHT 2016
@@ -17,9 +31,34 @@ typedef unsigned char BYTE;
 struct timeval t[6];
 struct timeval pixeltime[2];
 
-std::string loadKernelSource(const char* filename)
+std::filesystem::path getExecutableFolderPath() {
+#if defined(_WIN32)
+    char path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::string spath = std::string(path);
+    int pos = spath.find_last_of("\\/");
+    
+    std::filesystem::path execPath = spath.substr(0, pos + 1);
+
+    return execPath;
+
+#elif defined(__linux__)
+    char result[PATH_MAX];
+    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+
+    std::string spath = std::string(result);
+    int pos = spath.find_last_of("\\/");
+    std::filesystem::path execPath = spath.substr(0, pos + 1);
+
+    return execPath ;
+
+#else
+    return {};
+#endif
+    }
+
+std::string loadKernelSource(const char* filename, std::string &src_path)
 {
-    std::string src_path("../src/");
     src_path.append(filename);
     std::ifstream file(src_path);
     if(!file.is_open())
@@ -32,20 +71,120 @@ std::string loadKernelSource(const char* filename)
         std::istreambuf_iterator<char>()
     );
 }
+void inline print_help()
+    {
+    printf("./opencl [-il] [Left input image path] [-ir] [Right input image path] [-k] [kernel code source file path] [-o] [Output images path] [-w] [kernel window size] [-d] [maximum disparity] [-t] [cross checking threshold] [-nr] [occlusion filling neighbourhood range]\n");
+    }
 
-int main()
+void inline arg_error(char* endptr, char* argv_a)
+    {
+    if (endptr == argv_a || *endptr != '\0' || errno == ERANGE)
+        {
+        printf("Please provide a valid integer as a parameter for %s.\n\n", argv_a);
+        print_help();
+        exit(1);
+        }
+    }
+
+int main(int argc, char **argv)
 {
-    const char imgPathLeft[] = "../img/im0.png";
-    const char imgPathRight[] = "../img/im1.png";
+
+
+
+    //const char imgPathLeft[] = "../img/im0.png";
+    //const char imgPathRight[] = "../img/im1.png";
+
+    std::string executableFolderPath {getExecutableFolderPath().string()};
+
+    char imgPathLeft[256]{};
+    char imgPathRight[256]{};
+    char outputImagesPath[256]{};
+    char kernelPath[256]{};
+
+    std::string imgPathLeftStr = executableFolderPath + "/img/im0.png";
+    std::string imgPathRightStr = executableFolderPath + "/img/im1.png";
+    std::string outputPath = executableFolderPath + "/Output_images/";
+
+
+    strncpy(imgPathLeft, imgPathLeftStr.c_str(), imgPathLeftStr.length());
+    strncpy(imgPathRight, imgPathRightStr.c_str(), imgPathRightStr.length());
+    strncpy(outputImagesPath, outputPath.c_str(), outputPath.length());
+    strncpy(kernelPath, executableFolderPath.c_str(), executableFolderPath.length());
+
 
     unsigned int w = WIDTH;
     unsigned int h = HEIGHT;
     unsigned int d = MAX_DISPARITY;
+    int threshold = 20;
+    int neighbourhood_range = 50;
+
     int window = WINDOW;
     unsigned int resize_factor = RESIZE_FACTOR;
     unsigned int resized_w = w / resize_factor;
     unsigned int resized_h = h / resize_factor;
 
+    char* endptr;
+
+    if (argc > 1)
+        {
+        for (int a = 1; a < argc; a++)
+            {
+            if (strcmp(argv[a], "-w") == 0)
+                {
+                window = strtol(argv[a + 1], &endptr, 10);
+                arg_error(endptr, argv[a]);
+                a++;
+                }
+            else if (strcmp(argv[a], "-d") == 0)
+                {
+                d = strtol(argv[a + 1], &endptr, 10);
+                arg_error(endptr, argv[a]);
+                a++;
+                }
+            else if (strcmp(argv[a], "-t") == 0)
+                {
+                threshold = strtol(argv[a + 1], &endptr, 10);
+                arg_error(endptr, argv[a]);
+                a++;
+                }
+            else if (strcmp(argv[a], "-nr") == 0)
+                {
+                neighbourhood_range = strtol(argv[a + 1], &endptr, 10);
+                arg_error(endptr, argv[a]);
+                a++;
+                }
+            else if (strcmp(argv[a], "-il") == 0)
+                {
+                memset(imgPathLeft, 0, 256);
+                strncpy(imgPathLeft, argv[a + 1], sizeof(imgPathLeft) - 1);
+                a++;
+                }
+            else if (strcmp(argv[a], "-ir") == 0)
+                {
+                memset(imgPathRight, 0, 256);
+                strncpy(imgPathRight, argv[a + 1], sizeof(imgPathRight) - 1);
+                a++;
+                }
+            else if (strcmp(argv[a], "-k") == 0)
+                {
+                memset(kernelPath, 0, 256);
+                strncpy(kernelPath, argv[a + 1], sizeof(kernelPath) - 1);
+                a++;
+                }
+            else if (strcmp(argv[a], "-o") == 0)
+                {
+                memset(outputImagesPath, 0, 256);
+                strncpy(outputImagesPath, argv[a + 1], sizeof(outputImagesPath) - 1);
+                a++;
+                }
+            else if (strcmp(argv[a], "-h") == 0)
+                {
+                print_help();
+                }
+            }
+        }
+
+    std::string kernelPathStr = std::string(kernelPath);
     //unsigned char* inputImageLeft = NULL;
     //unsigned char* inputImageRight = NULL;
 
@@ -84,8 +223,10 @@ int main()
         std::cout<<"Found platform: "<<name<<std::endl;
         if(std::string(name).find("NVIDIA")!=std::string::npos)
             platform = platforms[i];
+        else if(std::string(name).find("AMD")!=std::string::npos)
+            platform = platforms[i];
     }
-    if(platform==NULL) { std::cout<<"No NVIDIA platform found\n"; return -1; }
+    if(platform==NULL) { std::cout<<"No NVIDIA or AMD platform found\n"; return -1; }
 
     cl_device_id device;
     err = clGetDeviceIDs(platform,CL_DEVICE_TYPE_GPU,1,&device,NULL);
@@ -115,7 +256,7 @@ int main()
     cl_mem occlusionBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayImageSize, occlusionL, &err); 
 
     // Load kernel functions
-    std::string kernelSource1 = loadKernelSource("kernels.cl");
+    std::string kernelSource1 = loadKernelSource("kernels.cl", kernelPathStr);
     const char* src1 = kernelSource1.c_str();
     size_t src1size = kernelSource1.length();
 
@@ -149,8 +290,12 @@ int main()
     clEnqueueReadBuffer(queue,tinyGrayBufferL,CL_TRUE,0,w/resize_factor*h/resize_factor*sizeof(unsigned char),tinyGrayLeft,0,NULL,NULL);
     clEnqueueReadBuffer(queue,tinyGrayBufferR,CL_TRUE,0,w/resize_factor*h/resize_factor*sizeof(unsigned char),tinyGrayRight,0,NULL,NULL);
 
-    lodepng_encode_file("../Output_images/tinyGrayLeft.png", tinyGrayLeft, w/resize_factor, h/resize_factor, LCT_GREY, 8); 
-    lodepng_encode_file("../Output_images/tinyGrayRight.png", tinyGrayRight, w/resize_factor, h/resize_factor, LCT_GREY, 8); 
+
+    std::string tinyGrayLeftPath = std::string(outputImagesPath) + "/tinyGrayLeft.png";
+    std::string tinyGrayRightPath = std::string(outputImagesPath) + "/tinyGrayRight.png";
+
+    lodepng_encode_file(tinyGrayLeftPath.c_str(), tinyGrayLeft, w / resize_factor, h / resize_factor, LCT_GREY, 8);
+    lodepng_encode_file(tinyGrayRightPath.c_str(), tinyGrayRight, w/resize_factor, h/resize_factor, LCT_GREY, 8); 
 
 
     gettimeofday(&t[1], NULL);
@@ -215,7 +360,7 @@ int main()
     */
     //lodepng_encode32_file("../Output_images/depth1.png",output1.data(),w,h);
 
-    lodepng_encode_file("../Output_images/depth1.png", disparityL, resized_w, resized_h, LCT_GREY, 8);
+    lodepng_encode_file((std::string(outputImagesPath) + std::string("/depth1.png")).c_str(), disparityL, resized_w, resized_h, LCT_GREY, 8);
     std::cout<<"Depth map 1 saved\n";
 
     disp_sign = -1;
@@ -249,12 +394,11 @@ int main()
     }
     */
     //lodepng_encode32_file("../Output_images/depth2.png",output2.data(),w,h);
-    lodepng_encode_file("../Output_images/depth2.png", disparityR, resized_w, resized_h, LCT_GREY, 8);
+    lodepng_encode_file((std::string(outputImagesPath) + std::string("/depth2.png")).c_str(), disparityR, resized_w, resized_h, LCT_GREY, 8);
     
     std::cout<<"Depth map 2 saved\n";
     gettimeofday(&t[2], NULL);
 
-    int threshold = 20;
     
     clEnqueueWriteBuffer(queue, debugIndex, CL_TRUE, 0, sizeof(int), &zero, 0, NULL, NULL);
 
@@ -278,13 +422,12 @@ int main()
     printf("%s\n", buffer);
 
 
-    lodepng_encode_file("../Output_images/cross_checked.png", crosscheckedL, resized_w, resized_h, LCT_GREY, 8);
+    lodepng_encode_file((std::string(outputImagesPath) + std::string("/cross_checked.png")).c_str(), crosscheckedL, resized_w, resized_h, LCT_GREY, 8);
     printf("Cross checked output image saved.\n");
 
 
     gettimeofday(&t[3], NULL);
 
-    int neighbourhood_range = 50;
 
     cl_kernel kernel4 = clCreateKernel(program1, "occlusion_filling", &err);
     clSetKernelArg(kernel4, 0, sizeof(cl_mem), &occlusionBufferL);
@@ -299,7 +442,7 @@ int main()
 
     clEnqueueReadBuffer(queue,occlusionBufferL,CL_TRUE,0,resized_w*resized_h*sizeof(unsigned char),occlusionL,0,NULL,NULL);
 
-    lodepng_encode_file("../Output_images/occlusion_filled.png", occlusionL, resized_w, resized_h, LCT_GREY, 8);
+    lodepng_encode_file((std::string(outputImagesPath) + std::string("/occlusion_filled.png")).c_str(), occlusionL, resized_w, resized_h, LCT_GREY, 8);
     printf("Occlusion filled output image saved.\n");
 
 
