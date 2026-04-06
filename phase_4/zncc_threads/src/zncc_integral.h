@@ -5,7 +5,6 @@
 #include <tuple>
 #include <inttypes.h>
 #include <math.h>
-#include <sys/time.h>
 
 struct ThreadData
 {

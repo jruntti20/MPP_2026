@@ -1,18 +1,37 @@
-#include <stdlib.h>
-#include <iostream>
-#include <stdlib.h>
-#include <sys/time.h>
-#include <vector>
-#include <thread>
-#include <errno.h>
-#include "lodepng.h"
-//#include "zncc.h"
-#include "imageManipulation.h"
-#include "cross_checking.h"
-#include "occlusion_filling.h"
-#include "zncc_integral.h"
+#ifdef _WIN32
 
-#include "pthread.h"
+	#include <stdlib.h>
+	#include <iostream>
+	#include <stdlib.h>
+	#include "sys/time.h"
+	#include <vector>
+	#include <thread>
+	#include <errno.h>
+	#include "lodepng.h"
+	//#include "zncc.h"
+	#include "imageManipulation.h"
+	#include "cross_checking.h"
+	#include "occlusion_filling.h"
+	#include "zncc_integral.h"
+
+#elif __linux__
+
+	#include <stdlib.h>
+	#include <iostream>
+	#include <stdlib.h>
+	#include <sys/time.h>
+	#include <vector>
+	#include <thread>
+	#include <errno.h>
+	#include "lodepng.h"
+	//#include "zncc.h"
+	#include "imageManipulation.h"
+	#include "cross_checking.h"
+	#include "occlusion_filling.h"
+	#include "zncc_integral.h"
+
+
+#endif
 
 #define BUF_SIZE 0x100000
 #define IMG_BUF 0x1000000
@@ -147,6 +166,8 @@ int main(int argc, char ** argv){
     }
     
     // read image from imgPath into memory allocated for inputImage
+
+
     lodepng_decode_file(&inputImageLeft, &w, &h, imgPathLeft, LCT_RGBA, 8);
     lodepng_decode_file(&inputImageRight, &w, &h, imgPathRight, LCT_RGBA, 8);
 
@@ -172,7 +193,8 @@ int main(int argc, char ** argv){
     populate_integral_tables(tinyGrayImageLeftPadded, tinyGrayImageRightPadded, inputIntegralL, inputIntegralR, inputIntegralSquaredL, inputIntegralSquaredR, meanTableL, meanTableR, varTable1, varTable2, h/4 + 2, w/4 + 2, win_size);
 
     int num_threads = std::thread::hardware_concurrency();
-    ThreadData tdata[num_threads];
+    std::vector<ThreadData> tdata(num_threads);
+    //ThreadData tdata[num_threads];
     int num_rows_processed = h / 4 + 2;
     int rows_per_thread = num_rows_processed / num_threads;
     
