@@ -1,4 +1,3 @@
-#include "getAverage.h"
 #include "zncc_integral.h"
 
 template <typename T> T get_window_sum(T *integralImage, int img_w, int x, int y, int r)
