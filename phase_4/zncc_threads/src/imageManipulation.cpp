@@ -1,5 +1,8 @@
 #include <errno.h>
 #include <stdio.h>
+#include <omp.h>
+
+
 
 void resizeImage(const unsigned char* inputImage, unsigned char* resizedImg, int w, int h){
 
@@ -9,6 +12,7 @@ void resizeImage(const unsigned char* inputImage, unsigned char* resizedImg, int
     int new_w = w/4, new_h = h/4;
 
     if(errno) printf("Value of errno before looping: %d\n", errno);
+    #pragma omp parallel for collapse(2)
     for (i = 0; i < new_h; i++) {
         for (j = 0; j < new_w; j++) {
             
@@ -26,6 +30,7 @@ void resizeImage(const unsigned char* inputImage, unsigned char* resizedImg, int
 void grayScaleImage(const unsigned char* inputImage, unsigned char* grayScaleImg, int w, int h){
 
     int i,j;
+    #pragma omp parallel for collapse(2)
     for (i = 0; i < h; i++){
         for (j = 0; j < w; j++){
             int idx;

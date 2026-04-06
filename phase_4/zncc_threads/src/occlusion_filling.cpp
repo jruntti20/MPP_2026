@@ -5,6 +5,7 @@ void occlusion_filling_nearest_pixel(unsigned char *readyOutputImg, unsigned cha
 
     unsigned int pixval;
     int left, right, top, bottom, x, y, rp, rn;
+    #pragma omp parallel for collapse(2) schedule(dynamic, 16)
     for (int i = 0; i < img_h; i++){
         for (int j = 0; j < img_w; j++){
             if (((int) i - (win_size -1)/2 < 0) || ((int) i + (win_size -1)/2 >= (int)img_h || ((int) j - (win_size -1)/2 < 0) || ((int) j + (win_size -1)/2 >= (int)img_w)))
@@ -13,8 +14,11 @@ void occlusion_filling_nearest_pixel(unsigned char *readyOutputImg, unsigned cha
             }
             if (outputImageLeftD[j + i*img_w] == 0)
             {
-                for (rp = 0, rn = 0; rp < range && rn > -range; rp++, rn--)
+                for (int r = 0; r < range; r++)
                 {
+                    rp = r;
+                    rn = -r;
+
                     left = j + rn;
                     right = j + rp;
                     top = i + rn;

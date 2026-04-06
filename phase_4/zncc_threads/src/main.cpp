@@ -13,6 +13,7 @@
 	#include "cross_checking.h"
 	#include "occlusion_filling.h"
 	#include "zncc_integral.h"
+    #include <omp.h>
 
 #elif __linux__
 
@@ -29,6 +30,7 @@
 	#include "cross_checking.h"
 	#include "occlusion_filling.h"
 	#include "zncc_integral.h"
+    #include <omp.h>
 
 
 #endif
@@ -71,6 +73,7 @@ void pad_image_1px(
     int padded_width = width + 2;
 
     // copy original image into center
+    #pragma omp parallel for collapse(2)
     for(int y = 0; y < height; y++)
     {
         for(int x = 0; x < width; x++)
@@ -192,72 +195,44 @@ int main(int argc, char ** argv){
 
     populate_integral_tables(tinyGrayImageLeftPadded, tinyGrayImageRightPadded, inputIntegralL, inputIntegralR, inputIntegralSquaredL, inputIntegralSquaredR, meanTableL, meanTableR, varTable1, varTable2, h/4 + 2, w/4 + 2, win_size);
 
-    int num_threads = std::thread::hardware_concurrency();
-    std::vector<ThreadData> tdata(num_threads);
-    //ThreadData tdata[num_threads];
-    int num_rows_processed = h / 4 + 2;
-    int rows_per_thread = num_rows_processed / num_threads;
-    
-    std::vector<std::thread> threads1;
-    for(int t = 0; t < num_threads; t++)
-    {
-        tdata[t].img_h = h/4 + 2;
-        tdata[t].img_w = w/4 + 2;
-        tdata[t].window_size = win_size;
-        tdata[t].max_disp = max_d_1;
-        tdata[t].disp_sign = 1;
-        tdata[t].left = tinyGrayImageLeftPadded;
-        tdata[t].right = tinyGrayImageRightPadded;
-        tdata[t].leftIntegral = inputIntegralL;
-        tdata[t].rightIntegral = inputIntegralR;
-        tdata[t].leftIntegralSquared = inputIntegralSquaredL;
-        tdata[t].rightIntegralSquared = inputIntegralSquaredR;
-        tdata[t].meanL = meanTableL;
-        tdata[t].meanR = meanTableR;
-        tdata[t].varL = varTable1;
-        tdata[t].varR = varTable2;
-        tdata[t].disparity = outputImageLeftD;
+    OMPData *leftright = new OMPData;
+    OMPData *rightleft = new OMPData;
+    leftright->img_h = h / 4 + 2;
+    leftright->img_w = w / 4 + 2;
+    leftright->window_size = win_size;
+    leftright->max_disp = max_d_1;
+    leftright->disp_sign = 1;
+    leftright->left = tinyGrayImageLeftPadded;
+    leftright->right = tinyGrayImageRightPadded;
+    leftright->leftIntegral = inputIntegralL;
+    leftright->rightIntegral = inputIntegralR;
+    leftright->leftIntegralSquared = inputIntegralSquaredL;
+    leftright->rightIntegralSquared = inputIntegralSquaredR;
+    leftright->meanL = meanTableL;
+    leftright->meanR = meanTableR;
+    leftright->varL = varTable1;
+    leftright->varR = varTable2;
+    leftright->disparity = outputImageLeftD;
 
-        tdata[t].y_start = t * rows_per_thread;
-        tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h  : (t+1)*rows_per_thread;
+    rightleft->img_h = h / 4 + 2;
+    rightleft->img_w = w / 4 + 2;
+    rightleft->window_size = win_size;
+    rightleft->max_disp = max_d_1;
+    rightleft->disp_sign = -1;
+    rightleft->left = tinyGrayImageRightPadded;
+    rightleft->right = tinyGrayImageLeftPadded;
+    rightleft->leftIntegral = inputIntegralR;
+    rightleft->rightIntegral = inputIntegralL;
+    rightleft->leftIntegralSquared = inputIntegralSquaredR;
+    rightleft->rightIntegralSquared = inputIntegralSquaredL;
+    rightleft->meanL = meanTableR;
+    rightleft->meanR = meanTableL;
+    rightleft->varL = varTable2;
+    rightleft->varR = varTable1;
+    rightleft->disparity = outputImageRightD;
 
-        threads1.emplace_back(zncc_worker, &tdata[t]);
-    }
-    for(auto& th: threads1)
-    {
-        th.join();
-    }
-
-    std::vector<std::thread> threads2;
-    for(int t = 0; t < num_threads; t++)
-    {
-        tdata[t].img_h = h/4 + 2;
-        tdata[t].img_w = w/4 + 2;
-        tdata[t].window_size = win_size;
-        tdata[t].max_disp = max_d_1;
-        tdata[t].disp_sign = -1;
-        tdata[t].left = tinyGrayImageRightPadded;
-        tdata[t].right = tinyGrayImageLeftPadded;
-        tdata[t].leftIntegral = inputIntegralR;
-        tdata[t].rightIntegral = inputIntegralL;
-        tdata[t].leftIntegralSquared = inputIntegralSquaredR;
-        tdata[t].rightIntegralSquared = inputIntegralSquaredL;
-        tdata[t].meanL = meanTableR;
-        tdata[t].meanR = meanTableL;
-        tdata[t].varL = varTable2;
-        tdata[t].varR = varTable1;
-        tdata[t].disparity = outputImageRightD;
-
-        tdata[t].y_start = t * rows_per_thread;
-        tdata[t].y_end = (t==num_threads - 1) ? tdata[t].img_h : (t+1)*rows_per_thread;
-
-        threads2.emplace_back(zncc_worker, &tdata[t]);
-    }
-    for(auto& th: threads2)
-    {
-        th.join();
-    }
-
+    zncc_omp(leftright);
+    zncc_omp(rightleft);
 
     gettimeofday(&t[2], NULL);
     char filename_left_disp[128];
@@ -305,6 +280,9 @@ int main(int argc, char ** argv){
     free(meanTableR);
     free(varTable1);
     free(varTable2);
+
+    delete leftright;
+    delete rightleft;
 
 
     // Profiling

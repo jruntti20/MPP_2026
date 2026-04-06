@@ -10,6 +10,79 @@ template <typename T> T get_window_sum(T *integralImage, int img_w, int x, int y
     return D - B - C + A;
 }
 
+void zncc_omp(OMPData* data)
+    {
+
+    int r = (data->window_size - 1) / 2;
+    int N = data->window_size * data->window_size;
+
+    #pragma omp parallel for
+    for (int y = 0; y < data->img_h; y++)
+        {
+        if (y == 0 || y == data->img_h - 1)
+            {
+            continue; // Exclude padded edges
+            }
+        #pragma omp parallel for schedule(dynamic, 16)
+        for (int x = 0; x < data->img_w; x++)
+            {
+            if (x - r == 0 || x + r == data->img_w - 1)
+                {
+                continue; // Exclude padded edges
+                }
+            float best_zncc_score = -1.0f;
+            unsigned int best_disparity_val = 0;
+
+            float meanA = data->meanL[y * data->img_w + x];
+            float varA = data->varL[y * data->img_w + x];
+            if (varA < 1e-6f) continue;
+
+            for (int d = 0; d < data->max_disp; d++)
+                {
+                int xr = x - d * data->disp_sign;
+                if (xr - r < 0 || xr + r >= data->img_w)
+                    {
+                    continue;
+                    }
+
+                float meanB = data->meanR[y * data->img_w + xr];
+                float varB = data->varR[y * data->img_w + xr];
+                if (varB < 1e-6f) continue;
+
+                float dot = 0.0f;
+
+                for (int j = -r; j <= r; j++)
+                    {
+                    for (int i = -r; i <= r; i++)
+                        {
+
+                        float a = data->left[(y + j) * data->img_w + x + i];
+                        float b = data->right[(y + j) * data->img_w + xr + i];
+
+                        dot += a * b;
+                        }
+                    }
+
+                float numerator = dot - N * meanA * meanB;
+                float denom = sqrt(varA * varB) * N + 1e-6f;
+
+                float zncc = numerator / denom;
+
+                if (zncc > best_zncc_score)
+                    {
+                    best_zncc_score = zncc;
+                    best_disparity_val = d;
+                    }
+
+                }
+
+            data->disparity[y * data->img_w + x] = best_disparity_val;
+
+            }
+
+        }
+    }
+
 void zncc_worker(ThreadData *data)
 {
     int r = data->window_size / 2;
@@ -81,13 +154,14 @@ void zncc_worker(ThreadData *data)
 void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputImage2, uint32_t *inputIntegralL, uint32_t *inputIntegralR, uint64_t *inputIntegralSquaredL, uint64_t *inputIntegralSquaredR, float *meanTableL, float *meanTableR, float *varTableL, float *varTableR, int img_h, int img_w, int win_size)
 {
     int n = (win_size/2);
-
+    #pragma omp parallel for 
     for (int y = 0; y < img_h; y++)
     {
         unsigned int row_sum1 = 0;
         unsigned int row_sum2 = 0;
         unsigned int row_sum1_squared = 0;
         unsigned int row_sum2_squared = 0;
+        #pragma omp parallel for reduction(+:row_sum1, row_sum2, row_sum1_squared, row_sum2_squared)
         for (int x = 0; x < img_w; x++)
         {
             row_sum1 += inputImage1[y * img_w + x];
@@ -113,7 +187,7 @@ void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputIm
 
         }
     }
-
+    #pragma omp parallel for collapse(2)
     for (int y = n + 1; y < img_h - n - 1; y++)
         for (int x = n + 1; x < img_w - n - 1; x++)
         {
