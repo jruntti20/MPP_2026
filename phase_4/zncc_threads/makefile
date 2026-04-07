@@ -1,4 +1,4 @@
-CC=g++
+CC=g++ -fopenmp
 CFLAGS=-g -Wall -O2
 #CFLAGS=-g -Wall -O0
 #LIB = -L /opt/cuda/lib64 -lOpenCL

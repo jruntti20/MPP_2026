@@ -1,4 +1,4 @@
-CXX = g++ -fopenmp
+CXX = g++
 CXXFLAGS = -g -std=c++11 -Wall -O2
 #LIBS = -lOpenCL
 LIBS = -L /opt/cuda/lib64 -lOpenCL
