@@ -253,8 +253,8 @@ __kernel void zncc_fast(
 
 __kernel void resize_grayscale_image(__global const BYTE *inputBuf1, __global const BYTE *inputBuf2, __global BYTE *outputBuf1, __global BYTE *outputBuf2, uchar resize_factor, uint w)
 {
-    int i = get_global_id(0);
-    int j = get_global_id(1);
+    int i = get_global_id(1);
+    int j = get_global_id(0);
     uint new_w = w/resize_factor;
     ulong idx = ((unsigned int)(i * w + j)) * 4 * resize_factor; // Take resize_factor:th pixels (4 bytes per pixel) from original image
     outputBuf1[i*new_w + j] = (BYTE)(inputBuf1[idx]*0.299 + inputBuf1[idx + 1]*0.587 + inputBuf1[idx + 2] * 0.114);
@@ -344,4 +344,22 @@ __kernel void occlusion_filling(__global BYTE *readyOutputImg, __global BYTE *in
         readyOutputImg[idx] = inputImageL[idx];
     }
 }
+
+__kernel void pad_image_1px(
+    __global const uchar* inputImageL,
+    __global const uchar* inputImageR,
+    int w,
+    int h,
+    __global uchar* outputImageL,
+    __global uchar* outputImageR
+)
+    {
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+
+    int padded_width = w + 2;
+
+    outputImageL[(y + 1) * padded_width + (x + 1)] = inputImageL[y * w + x];
+    outputImageR[(y + 1) * padded_width + (x + 1)] = inputImageR[y * w + x];
+    }
 

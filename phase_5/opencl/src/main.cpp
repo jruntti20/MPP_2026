@@ -57,13 +57,12 @@ std::filesystem::path getExecutableFolderPath() {
 #endif
     }
 
-std::string loadKernelSource(const char* filename, std::string &src_path)
+std::string loadKernelSource(std::string &src_path)
 {
-    src_path.append(filename);
     std::ifstream file(src_path);
     if(!file.is_open())
     {
-        std::cerr << "Failed to open kernel file: " << filename << std::endl;
+        std::cerr << "Failed to open kernel file: " << src_path << std::endl;
         exit(1);
     }
     return std::string(
@@ -91,9 +90,6 @@ int main(int argc, char **argv)
 
 
 
-    //const char imgPathLeft[] = "../img/im0.png";
-    //const char imgPathRight[] = "../img/im1.png";
-
     std::string executableFolderPath {getExecutableFolderPath().string()};
 
     char imgPathLeft[256]{};
@@ -101,15 +97,16 @@ int main(int argc, char **argv)
     char outputImagesPath[256]{};
     char kernelPath[256]{};
 
-    std::string imgPathLeftStr = executableFolderPath + "/img/im0.png";
-    std::string imgPathRightStr = executableFolderPath + "/img/im1.png";
-    std::string outputPath = executableFolderPath + "/Output_images/";
+    std::string imgPathLeftStr = executableFolderPath + "../img/im0.png";
+    std::string imgPathRightStr = executableFolderPath + "../img/im1.png";
+    std::string outputPathStr = executableFolderPath + "../Output_images/";
+    std::string kernelPathStr = executableFolderPath + "../src/kernels.cl";
 
 
     strncpy(imgPathLeft, imgPathLeftStr.c_str(), imgPathLeftStr.length());
     strncpy(imgPathRight, imgPathRightStr.c_str(), imgPathRightStr.length());
-    strncpy(outputImagesPath, outputPath.c_str(), outputPath.length());
-    strncpy(kernelPath, executableFolderPath.c_str(), executableFolderPath.length());
+    strncpy(outputImagesPath, outputPathStr.c_str(), outputPathStr.length());
+    strncpy(kernelPath, kernelPathStr.c_str(), kernelPathStr.length());
 
 
     unsigned int w = WIDTH;
@@ -122,6 +119,8 @@ int main(int argc, char **argv)
     unsigned int resize_factor = RESIZE_FACTOR;
     unsigned int resized_w = w / resize_factor;
     unsigned int resized_h = h / resize_factor;
+    unsigned int resized_w_padded = w / resize_factor + 2;
+    unsigned int resized_h_padded = h / resize_factor + 2;
 
     char* endptr;
 
@@ -156,25 +155,29 @@ int main(int argc, char **argv)
             else if (strcmp(argv[a], "-il") == 0)
                 {
                 memset(imgPathLeft, 0, 256);
-                strncpy(imgPathLeft, argv[a + 1], sizeof(imgPathLeft) - 1);
+                snprintf(imgPathLeft, sizeof(imgPathLeft), "%s", argv[a + 1]);
+                //strncpy(imgPathLeft, argv[a + 1], sizeof(imgPathLeft) - 1);
                 a++;
                 }
             else if (strcmp(argv[a], "-ir") == 0)
                 {
                 memset(imgPathRight, 0, 256);
-                strncpy(imgPathRight, argv[a + 1], sizeof(imgPathRight) - 1);
+                snprintf(imgPathRight, sizeof(imgPathRight), "%s", argv[a + 1]);
+                //strncpy(imgPathRight, argv[a + 1], sizeof(imgPathRight) - 1);
                 a++;
                 }
             else if (strcmp(argv[a], "-k") == 0)
                 {
                 memset(kernelPath, 0, 256);
-                strncpy(kernelPath, argv[a + 1], sizeof(kernelPath) - 1);
+                snprintf(kernelPath, sizeof(kernelPath), "%s", argv[a + 1]);
+                //strncpy(kernelPath, argv[a + 1], sizeof(kernelPath) - 1);
                 a++;
                 }
             else if (strcmp(argv[a], "-o") == 0)
                 {
                 memset(outputImagesPath, 0, 256);
-                strncpy(outputImagesPath, argv[a + 1], sizeof(outputImagesPath) - 1);
+                snprintf(outputImagesPath, sizeof(outputImagesPath), "%s", argv[a + 1]);
+                //strncpy(outputImagesPath, argv[a + 1], sizeof(outputImagesPath) - 1);
                 a++;
                 }
             else if (strcmp(argv[a], "-h") == 0)
@@ -184,7 +187,7 @@ int main(int argc, char **argv)
             }
         }
 
-    std::string kernelPathStr = std::string(kernelPath);
+    kernelPathStr = std::string(kernelPath);
     //unsigned char* inputImageLeft = NULL;
     //unsigned char* inputImageRight = NULL;
 
@@ -192,10 +195,28 @@ int main(int argc, char **argv)
     unsigned char* inputImageRight = (unsigned char*)malloc(w * h * 4 * sizeof(unsigned char));
     unsigned char* tinyGrayLeft = (unsigned char *)malloc(w/resize_factor * h/resize_factor * sizeof(unsigned char));
     unsigned char* tinyGrayRight = (unsigned char *)malloc(w/resize_factor * h/resize_factor * sizeof(unsigned char));
-    unsigned char* disparityL = (unsigned char *)calloc(w / resize_factor * h / resize_factor, sizeof(unsigned char));
-    unsigned char* disparityR = (unsigned char *)calloc(w / resize_factor * h / resize_factor, sizeof(unsigned char));
-    unsigned char *crosscheckedL = (unsigned char *)calloc(w/resize_factor * h/resize_factor, sizeof(unsigned char));
-    unsigned char *occlusionL = (unsigned char *)calloc(w/resize_factor * h/resize_factor, sizeof(unsigned char));
+
+    // Add 1 pixel padding to resized images. Needed for integral image processing.
+    unsigned char* tinyGrayLeftPadded = (unsigned char*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(BYTE));
+    unsigned char* tinyGrayRightPadded = (unsigned char*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(BYTE));
+
+    unsigned char* disparityL = (unsigned char *)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(unsigned char));
+    unsigned char* disparityR = (unsigned char *)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(unsigned char));
+    unsigned char *crosscheckedL = (unsigned char *)calloc((w/resize_factor + 2) * (h/resize_factor + 2), sizeof(unsigned char));
+    unsigned char *occlusionL = (unsigned char *)calloc((w/resize_factor + 2) * (h/resize_factor + 2), sizeof(unsigned char));
+
+    // Integral image tables with one pixel padding
+    uint32_t* inputIntegralL = (uint32_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint32_t));
+    uint32_t* inputIntegralR = (uint32_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint32_t));
+    uint64_t* inputIntegralSquaredL = (uint64_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint64_t));
+    uint64_t* inputIntegralSquaredR = (uint64_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint64_t));
+    uint32_t* inputIntegralDot = (uint32_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint32_t));
+
+    float* meanTableL = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
+    float* meanTableR = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
+    float* varTable1 = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
+    float* varTable2 = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
+
 
     unsigned error;
 
@@ -244,19 +265,22 @@ int main(int argc, char **argv)
 
     size_t imageSize = w*h*CHANNELS * sizeof(unsigned char);
     size_t tinyGrayImageSize = w/4 * h/4 * sizeof(unsigned char);
+    size_t tinyGrayPaddedImageSize = (w/resize_factor + 2) * (h/resize_factor + 2) * sizeof(unsigned char);
 
     cl_mem leftBuffer = clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,imageSize,inputImageLeft,&err);
     cl_mem rightBuffer = clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,imageSize,inputImageRight,&err);
     cl_mem tinyGrayBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayImageSize, tinyGrayLeft, &err);
     cl_mem tinyGrayBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayImageSize, tinyGrayRight, &err);
+    cl_mem tinyGrayPaddedBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, tinyGrayLeftPadded , &err);
+    cl_mem tinyGrayPaddedBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, tinyGrayRightPadded , &err);
 
-    cl_mem disparityBufferL = clCreateBuffer(context,CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,tinyGrayImageSize,disparityL,&err);
-    cl_mem disparityBufferR = clCreateBuffer(context,CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,tinyGrayImageSize,disparityR,&err);
-    cl_mem crosscheckedBufL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayImageSize, crosscheckedL, &err); 
-    cl_mem occlusionBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayImageSize, occlusionL, &err); 
+    cl_mem disparityBufferL = clCreateBuffer(context,CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,tinyGrayPaddedImageSize,disparityL,&err);
+    cl_mem disparityBufferR = clCreateBuffer(context,CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,tinyGrayPaddedImageSize,disparityR,&err);
+    cl_mem crosscheckedBufL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, crosscheckedL, &err); 
+    cl_mem occlusionBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, occlusionL, &err); 
 
     // Load kernel functions
-    std::string kernelSource1 = loadKernelSource("kernels.cl", kernelPathStr);
+    std::string kernelSource1 = loadKernelSource(kernelPathStr);
     const char* src1 = kernelSource1.c_str();
     size_t src1size = kernelSource1.length();
 
@@ -274,7 +298,7 @@ int main(int argc, char **argv)
     /* ---------- KERNEL 1 RESIZE AND GRAYSCALE ---------- */
 
     gettimeofday(&t[0], NULL);
-    size_t global1[2] = {size_t(resized_h), size_t(resized_w)};
+    size_t global1[2] = {size_t(resized_w), size_t(resized_h)};
 
     cl_kernel kernel1 = clCreateKernel(program1,"resize_grayscale_image",&err);
     clSetKernelArg(kernel1,0,sizeof(cl_mem),&leftBuffer);
@@ -297,6 +321,26 @@ int main(int argc, char **argv)
     lodepng_encode_file(tinyGrayLeftPath.c_str(), tinyGrayLeft, w / resize_factor, h / resize_factor, LCT_GREY, 8);
     lodepng_encode_file(tinyGrayRightPath.c_str(), tinyGrayRight, w/resize_factor, h/resize_factor, LCT_GREY, 8); 
 
+    cl_kernel kernel5 = clCreateKernel(program1,"pad_image_1px",&err);
+    clSetKernelArg(kernel5,0,sizeof(cl_mem),&tinyGrayBufferL);
+    clSetKernelArg(kernel5,1,sizeof(cl_mem),&tinyGrayBufferR);
+    clSetKernelArg(kernel5,2,sizeof(cl_uint),&resized_w);
+    clSetKernelArg(kernel5,3,sizeof(cl_uint),&resized_h);
+    clSetKernelArg(kernel5,4,sizeof(cl_mem),&tinyGrayPaddedBufferL);
+    clSetKernelArg(kernel5,5,sizeof(cl_mem),&tinyGrayPaddedBufferR);
+
+    clEnqueueNDRangeKernel(queue,kernel5,2,NULL,global1,NULL,0,NULL,NULL);
+    clFinish(queue);
+
+    clEnqueueReadBuffer(queue,tinyGrayPaddedBufferL,CL_TRUE,0,(w/resize_factor + 2) * (h/resize_factor + 2) * sizeof(unsigned char),tinyGrayLeftPadded,0,NULL,NULL);
+    clEnqueueReadBuffer(queue,tinyGrayPaddedBufferR,CL_TRUE,0,(w/resize_factor + 2) * (h/resize_factor + 2) * sizeof(unsigned char),tinyGrayRightPadded,0,NULL,NULL);
+
+
+    std::string tinyGrayLeftPaddedPath = std::string(outputImagesPath) + "/tinyGrayLeftPadded.png";
+    std::string tinyGrayRightPaddedPath = std::string(outputImagesPath) + "/tinyGrayRightPadded.png";
+
+    lodepng_encode_file(tinyGrayLeftPaddedPath.c_str(), tinyGrayLeftPadded, w / resize_factor + 2, h / resize_factor + 2, LCT_GREY, 8);
+    lodepng_encode_file(tinyGrayRightPaddedPath.c_str(), tinyGrayRightPadded, w/resize_factor + 2, h/resize_factor + 2, LCT_GREY, 8); 
 
     gettimeofday(&t[1], NULL);
     int zero = 0;
@@ -327,12 +371,12 @@ int main(int argc, char **argv)
     clEnqueueWriteBuffer(queue, debugIndex, CL_TRUE, 0, sizeof(int), &zero, 0, NULL, NULL);
 
     cl_kernel kernel2 = clCreateKernel(program1,"zncc_fast",&err);
-    clSetKernelArg(kernel2,0,sizeof(cl_mem),&tinyGrayBufferL);
-    clSetKernelArg(kernel2,1,sizeof(cl_mem),&tinyGrayBufferR);
+    clSetKernelArg(kernel2,0,sizeof(cl_mem),&tinyGrayPaddedBufferL);
+    clSetKernelArg(kernel2,1,sizeof(cl_mem),&tinyGrayPaddedBufferR);
     clSetKernelArg(kernel2,2,sizeof(cl_mem),&disparityBufferL);
     clSetKernelArg(kernel2,3,sizeof(cl_int),&disp_sign);
-    clSetKernelArg(kernel2,4,sizeof(cl_int),&resized_w);
-    clSetKernelArg(kernel2,5,sizeof(cl_int),&resized_h);
+    clSetKernelArg(kernel2,4,sizeof(cl_int),&resized_w_padded);
+    clSetKernelArg(kernel2,5,sizeof(cl_int),&resized_h_padded);
     clSetKernelArg(kernel2,6, sizeof(cl_int),&window); 
     clSetKernelArg(kernel2,7,sizeof(cl_mem),&debugBuf);
     clSetKernelArg(kernel2,8,sizeof(cl_mem),&debugIndex);
@@ -366,12 +410,12 @@ int main(int argc, char **argv)
     disp_sign = -1;
 
     kernel2 = clCreateKernel(program1,"zncc_fast",&err);
-    clSetKernelArg(kernel2,0,sizeof(cl_mem),&tinyGrayBufferR);
-    clSetKernelArg(kernel2,1,sizeof(cl_mem),&tinyGrayBufferL);
+    clSetKernelArg(kernel2,0,sizeof(cl_mem),&tinyGrayPaddedBufferR);
+    clSetKernelArg(kernel2,1,sizeof(cl_mem),&tinyGrayPaddedBufferL);
     clSetKernelArg(kernel2,2,sizeof(cl_mem),&disparityBufferR);
     clSetKernelArg(kernel2,3,sizeof(cl_int),&disp_sign);
-    clSetKernelArg(kernel2,4,sizeof(cl_int),&resized_w);
-    clSetKernelArg(kernel2,5,sizeof(cl_int),&resized_h);
+    clSetKernelArg(kernel2,4,sizeof(cl_int),&resized_w_padded);
+    clSetKernelArg(kernel2,5,sizeof(cl_int),&resized_h_padded);
     clSetKernelArg(kernel2,6, sizeof(cl_int),&window); 
     clSetKernelArg(kernel2,7,sizeof(cl_mem),&debugBuf);
     clSetKernelArg(kernel2,8,sizeof(cl_mem),&debugIndex);
@@ -407,8 +451,8 @@ int main(int argc, char **argv)
     clSetKernelArg(kernel3, 0, sizeof(cl_mem), &disparityBufferL);
     clSetKernelArg(kernel3, 1, sizeof(cl_mem), &disparityBufferR);
     clSetKernelArg(kernel3, 2, sizeof(cl_mem), &crosscheckedBufL);
-    clSetKernelArg(kernel3, 3, sizeof(cl_int), &resized_w);
-    clSetKernelArg(kernel3, 4, sizeof(cl_int), &resized_h);
+    clSetKernelArg(kernel3, 3, sizeof(cl_int), &resized_w_padded);
+    clSetKernelArg(kernel3, 4, sizeof(cl_int), &resized_h_padded);
     clSetKernelArg(kernel3, 5, sizeof(cl_int), &threshold);
     clSetKernelArg(kernel3, 6, sizeof(cl_int), &window);
     clSetKernelArg(kernel3,7,sizeof(cl_mem),&debugBuf);
@@ -432,8 +476,8 @@ int main(int argc, char **argv)
     cl_kernel kernel4 = clCreateKernel(program1, "occlusion_filling", &err);
     clSetKernelArg(kernel4, 0, sizeof(cl_mem), &occlusionBufferL);
     clSetKernelArg(kernel4, 1, sizeof(cl_mem), &crosscheckedBufL);
-    clSetKernelArg(kernel4, 2, sizeof(cl_int), &resized_w);
-    clSetKernelArg(kernel4, 3, sizeof(cl_int), &resized_h);
+    clSetKernelArg(kernel4, 2, sizeof(cl_int), &resized_w_padded);
+    clSetKernelArg(kernel4, 3, sizeof(cl_int), &resized_h_padded);
     clSetKernelArg(kernel4, 4, sizeof(cl_int), &neighbourhood_range);
     clSetKernelArg(kernel4, 5, sizeof(cl_int), &window);
 
