@@ -1,5 +1,7 @@
 
 #ifdef __linux__ 
+    #include <limits.h>
+    #include <unistd.h>
     #include <filesystem>
     #include <iostream>
     #include <fstream>
@@ -45,6 +47,11 @@ std::filesystem::path getExecutableFolderPath() {
 #elif defined(__linux__)
     char result[PATH_MAX];
     ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+    if (count != -1) {
+        result[count] = '\0';  // null-terminate
+    } else {
+        perror("readlink");
+    }
 
     std::string spath = std::string(result);
     int pos = spath.find_last_of("\\/");
@@ -200,10 +207,10 @@ int main(int argc, char **argv)
     unsigned char* tinyGrayLeftPadded = (unsigned char*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(BYTE));
     unsigned char* tinyGrayRightPadded = (unsigned char*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(BYTE));
 
-    unsigned char* disparityL = (unsigned char *)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(unsigned char));
-    unsigned char* disparityR = (unsigned char *)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(unsigned char));
-    unsigned char *crosscheckedL = (unsigned char *)calloc((w/resize_factor + 2) * (h/resize_factor + 2), sizeof(unsigned char));
-    unsigned char *occlusionL = (unsigned char *)calloc((w/resize_factor + 2) * (h/resize_factor + 2), sizeof(unsigned char));
+    unsigned char* disparityL = (unsigned char *)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(BYTE));
+    unsigned char* disparityR = (unsigned char *)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(BYTE));
+    unsigned char *crosscheckedL = (unsigned char *)calloc((w/resize_factor + 2) * (h/resize_factor + 2), sizeof(BYTE));
+    unsigned char *occlusionL = (unsigned char *)calloc((w/resize_factor + 2) * (h/resize_factor + 2), sizeof(BYTE));
 
     // Integral image tables with one pixel padding
     uint32_t* inputIntegralL = (uint32_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint32_t));
@@ -214,8 +221,8 @@ int main(int argc, char **argv)
 
     float* meanTableL = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
     float* meanTableR = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
-    float* varTable1 = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
-    float* varTable2 = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
+    float* varTableL = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
+    float* varTableR = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
 
 
     unsigned error;
@@ -259,7 +266,7 @@ int main(int argc, char **argv)
     std::cout<<"Device: "<<device_name<<std::endl;
 
     cl_context context = clCreateContext(NULL,1,&device,NULL,NULL,&err);
-    cl_command_queue queue = clCreateCommandQueue(context,device,0,&err);
+    cl_command_queue queue = clCreateCommandQueueWithProperties(context,device,0,&err);
 
     /* ---------- BUFFERS ---------- */
 
@@ -278,6 +285,16 @@ int main(int argc, char **argv)
     cl_mem disparityBufferR = clCreateBuffer(context,CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,tinyGrayPaddedImageSize,disparityR,&err);
     cl_mem crosscheckedBufL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, crosscheckedL, &err); 
     cl_mem occlusionBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, occlusionL, &err); 
+
+    cl_mem inputIntegralBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, inputIntegralL, &err);
+    cl_mem inputIntegralBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, inputIntegralR, &err);
+    cl_mem inputIntegralSquaredBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, inputIntegralSquaredL, &err);
+    cl_mem inputIntegralSquaredBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, inputIntegralSquaredR, &err);
+
+    cl_mem meanTableBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, meanTableL, &err);
+    cl_mem meanTableBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, meanTableR, &err);
+    cl_mem varTableBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, varTableL, &err);
+    cl_mem varTableBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, varTableR, &err);
 
     // Load kernel functions
     std::string kernelSource1 = loadKernelSource(kernelPathStr);
@@ -361,7 +378,7 @@ int main(int argc, char **argv)
 
     /* ---------- KERNEL 1 FAST ---------- */
     //size_t global2[3] = {size_t(resized_w),size_t(resized_h),size_t(d)};
-    size_t global2[2] = {size_t(resized_w),size_t(resized_h)};
+    size_t global2[2] = {size_t(resized_w_padded),size_t(resized_h_padded)};
     //size_t global2[2] = {((resized_w + 15) / 16) * 16,((resized_h + 15) / 16) * 16};
     //size_t local2[2] = {16, 16};
     int disp_sign = 1;
@@ -385,8 +402,8 @@ int main(int argc, char **argv)
     clEnqueueNDRangeKernel(queue,kernel2,2,NULL,global2, NULL,0,NULL,NULL);
     clFinish(queue);
 
-    clEnqueueReadBuffer(queue,disparityBufferL,CL_TRUE,0,resized_w
-            *resized_h*sizeof(unsigned char),disparityL,0,NULL,NULL);
+    clEnqueueReadBuffer(queue,disparityBufferL,CL_TRUE,0,resized_w_padded
+            *resized_h_padded*sizeof(unsigned char),disparityL,0,NULL,NULL);
 
     clEnqueueReadBuffer(queue, debugBuf, CL_TRUE, 0, 8192, buffer, 0, NULL, NULL);
     printf("%s\n", buffer);
@@ -404,7 +421,7 @@ int main(int argc, char **argv)
     */
     //lodepng_encode32_file("../Output_images/depth1.png",output1.data(),w,h);
 
-    lodepng_encode_file((std::string(outputImagesPath) + std::string("/depth1.png")).c_str(), disparityL, resized_w, resized_h, LCT_GREY, 8);
+    lodepng_encode_file((std::string(outputImagesPath) + std::string("/depth1.png")).c_str(), disparityL, resized_w_padded, resized_h_padded, LCT_GREY, 8);
     std::cout<<"Depth map 1 saved\n";
 
     disp_sign = -1;
@@ -423,7 +440,7 @@ int main(int argc, char **argv)
     clEnqueueNDRangeKernel(queue,kernel2,2,NULL,global2, NULL,0, NULL,NULL);
     clFinish(queue);
 
-    clEnqueueReadBuffer(queue,disparityBufferR,CL_TRUE,0,resized_w*resized_h*sizeof(unsigned char),disparityR,0,NULL,NULL);
+    clEnqueueReadBuffer(queue,disparityBufferR,CL_TRUE,0,resized_w_padded*resized_h_padded*sizeof(unsigned char),disparityR,0,NULL,NULL);
     
 
     /*
@@ -438,7 +455,7 @@ int main(int argc, char **argv)
     }
     */
     //lodepng_encode32_file("../Output_images/depth2.png",output2.data(),w,h);
-    lodepng_encode_file((std::string(outputImagesPath) + std::string("/depth2.png")).c_str(), disparityR, resized_w, resized_h, LCT_GREY, 8);
+    lodepng_encode_file((std::string(outputImagesPath) + std::string("/depth2.png")).c_str(), disparityR, resized_w_padded, resized_h_padded, LCT_GREY, 8);
     
     std::cout<<"Depth map 2 saved\n";
     gettimeofday(&t[2], NULL);
@@ -461,12 +478,12 @@ int main(int argc, char **argv)
     clEnqueueNDRangeKernel(queue,kernel3,2,NULL,global2, NULL,0, NULL,NULL);
     clFinish(queue);
 
-    clEnqueueReadBuffer(queue,crosscheckedBufL,CL_TRUE,0,resized_w*resized_h*sizeof(unsigned char),crosscheckedL,0,NULL,NULL);
+    clEnqueueReadBuffer(queue,crosscheckedBufL,CL_TRUE,0,resized_w_padded*resized_h_padded*sizeof(unsigned char),crosscheckedL,0,NULL,NULL);
     clEnqueueReadBuffer(queue, debugBuf, CL_TRUE, 0, 8192, buffer, 0, NULL, NULL);
     printf("%s\n", buffer);
 
 
-    lodepng_encode_file((std::string(outputImagesPath) + std::string("/cross_checked.png")).c_str(), crosscheckedL, resized_w, resized_h, LCT_GREY, 8);
+    lodepng_encode_file((std::string(outputImagesPath) + std::string("/cross_checked.png")).c_str(), crosscheckedL, resized_w_padded, resized_h_padded, LCT_GREY, 8);
     printf("Cross checked output image saved.\n");
 
 
@@ -484,9 +501,9 @@ int main(int argc, char **argv)
     clEnqueueNDRangeKernel(queue,kernel4,2,NULL,global2, NULL,0, NULL,NULL);
     clFinish(queue);
 
-    clEnqueueReadBuffer(queue,occlusionBufferL,CL_TRUE,0,resized_w*resized_h*sizeof(unsigned char),occlusionL,0,NULL,NULL);
+    clEnqueueReadBuffer(queue,occlusionBufferL,CL_TRUE,0,resized_w_padded*resized_h_padded*sizeof(unsigned char),occlusionL,0,NULL,NULL);
 
-    lodepng_encode_file((std::string(outputImagesPath) + std::string("/occlusion_filled.png")).c_str(), occlusionL, resized_w, resized_h, LCT_GREY, 8);
+    lodepng_encode_file((std::string(outputImagesPath) + std::string("/occlusion_filled.png")).c_str(), occlusionL, resized_w_padded, resized_h_padded, LCT_GREY, 8);
     printf("Occlusion filled output image saved.\n");
 
 

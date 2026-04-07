@@ -156,10 +156,10 @@ __kernel void zncc_fast(
     //disparity[y*width+x] = 128;
     //return;
 
-    //if (x == 0 && y == 0)
-    //{
-    //    dbg_printf(debug_buf, debug_index, "x: %f, y %f, size_x: %f\n", x, y, size_x);
-    //}
+    if (x == 0 && y == 0)
+    {
+        dbg_printf(debug_buf, debug_index, "size_x: %f, size_y %f, x: %f\n", size_x, size_y, x);
+    }
 
     if(x>=width || y >= height)
         return;

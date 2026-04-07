@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -g -std=c++11 -Wall -O2
+CXXFLAGS = -g -std=c++17 -Wall -Wextra -O2
 #LIBS = -lOpenCL
 LIBS = -L /opt/cuda/lib64 -lOpenCL
 INC = -I /opt/cuda/include
