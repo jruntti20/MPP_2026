@@ -151,7 +151,6 @@ int main(int argc, char ** argv){
 
     
     gettimeofday(&t[0], NULL);
-    grayScaleImage(inputImageLeft, grayInputImageLeft, w, h);
     grayScaleAndResizeImage(inputImageLeft, tinyGrayImageLeft, w, h);
     grayScaleAndResizeImage(inputImageRight, tinyGrayImageRight, w, h);
 
