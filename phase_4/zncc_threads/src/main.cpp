@@ -118,7 +118,6 @@ int main(int argc, char ** argv){
     unsigned char *inputImageLeft = (unsigned char *)malloc(WIDTH * HEIGHT * 4 * sizeof(BYTE)); 
     unsigned char *inputImageRight = (unsigned char *)malloc(WIDTH * HEIGHT * 4 * sizeof(BYTE)); 
     unsigned char *grayInputImageLeft = (unsigned char *)malloc(WIDTH * HEIGHT * sizeof(BYTE)); 
-    unsigned char *grayInputImageRight = (unsigned char *)malloc(WIDTH * HEIGHT * sizeof(BYTE)); 
     unsigned char *tinyGrayImageLeft = (unsigned char *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(BYTE)); 
     unsigned char *tinyGrayImageRight = (unsigned char *)malloc(WIDTH/4 * HEIGHT/4 * sizeof(BYTE));
 
@@ -142,7 +141,7 @@ int main(int argc, char ** argv){
     float *varTable1 = (float *)calloc((WIDTH/4 + 2) * (HEIGHT/4 + 2) , sizeof(float));
     float *varTable2 = (float *)calloc((WIDTH/4 + 2) * (HEIGHT/4 + 2) , sizeof(float));
     
-    if (!inputImageLeft || !inputImageRight || !tinyGrayImageLeft || !tinyGrayImageRight || !grayInputImageLeft || !grayInputImageRight || !outputImageLeftD || !outputImageRightD){
+    if (!inputImageLeft || !inputImageRight || !tinyGrayImageLeft || !tinyGrayImageRight || !grayInputImageLeft || !outputImageLeftD || !outputImageRightD){
         std::cout << "Failed to malloc a buffer for an image" << std::endl;
     }
     
@@ -153,9 +152,8 @@ int main(int argc, char ** argv){
     
     gettimeofday(&t[0], NULL);
     grayScaleImage(inputImageLeft, grayInputImageLeft, w, h);
-    grayScaleImage(inputImageRight, grayInputImageRight, w, h);
-    resizeImage(grayInputImageLeft, tinyGrayImageLeft, w, h);
-    resizeImage(grayInputImageRight, tinyGrayImageRight, w, h);
+    grayScaleAndResizeImage(inputImageLeft, tinyGrayImageLeft, w, h);
+    grayScaleAndResizeImage(inputImageRight, tinyGrayImageRight, w, h);
 
     pad_image_1px(tinyGrayImageLeft, w/4, h/4, tinyGrayImageLeftPadded);
     pad_image_1px(tinyGrayImageRight, w/4, h/4, tinyGrayImageRightPadded);
@@ -271,7 +269,6 @@ int main(int argc, char ** argv){
     free(tinyGrayImageLeftPadded);
     free(tinyGrayImageRightPadded);
     free(grayInputImageLeft);
-    free(grayInputImageRight);
     free(outputImageRightD);
     free(readyOutputImg);
     free(inputIntegralL);
