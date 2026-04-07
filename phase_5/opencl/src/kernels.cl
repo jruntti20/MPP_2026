@@ -1,8 +1,10 @@
+#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
+#pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+
 #define MAX_DISPARITY 64
 #define BLOCK_SIZE 16
 typedef unsigned char BYTE;
-
-
 #define DEBUG_BUFFER_SIZE 8192
 
 inline int dbg_alloc(__global int* index, int length)
@@ -251,6 +253,82 @@ __kernel void zncc_fast(
     disparity[y*width+x] = best_d;
 }
 
+
+__kernel void zncc_fast_integral(
+        __global uchar *left,
+        __global uchar *right,
+        __global float *meanTableL,
+        __global float *meanTableR,
+        __global float *varTableL,
+        __global float *varTableR,
+        __global uchar *disparity,
+        int disp_sign,
+        int width,
+        int height,
+        int window
+        )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+
+    int r = window / 2;
+    int N = window * window;
+
+    if(x>=width || y >= height)
+        return;
+
+    if(x < r || y < r || x >= width-r || y >= height-r)
+    {
+        disparity[y*width+x] = 0;
+        return;
+    }
+
+    //if (!(x + (d * disp_sign) < width - window))
+    //    return;
+
+    int best_d = 0;
+    float best_score = -2.0f;
+
+    float meanL = meanTableL[y * width + x];
+    float varL = varTableL[y * width + x];
+    if(varL < 1e-6f) return;
+
+    for(int d=0; d<MAX_DISPARITY && x+d < width-window; d++)
+    {
+        int xr = x - d * disp_sign;
+        if (xr - r < 0 || xr + r >= width) continue;
+
+        float meanR = meanTableR[y * width + xr];
+        float varR = varTableR[y * width + xr];
+        if(varR < 1e-6f) continue;
+
+        float dot = 0.0f;
+
+        for(int j = -r; j <= r; j++)
+        for(int i = -r; i <= r; i++)
+        {
+            float a = left[(y + j) * width + x + i];
+            float b = right[(y + j) * width + xr + i];
+
+            dot += a*b;
+        }
+
+        float numerator = dot - N * meanL * meanR;
+        float denom = sqrt(varL * varR) * N + 1e-6f;
+
+        float zncc = numerator / denom;
+
+        if (zncc > best_score)
+        {
+            best_score = zncc;
+            best_d = d;
+        }
+    }
+
+    disparity[y * width + x] = best_d;
+
+}
+
 __kernel void resize_grayscale_image(__global const BYTE *inputBuf1, __global const BYTE *inputBuf2, __global BYTE *outputBuf1, __global BYTE *outputBuf2, uchar resize_factor, uint w)
 {
     int i = get_global_id(1);
@@ -319,7 +397,7 @@ __kernel void occlusion_filling(__global BYTE *readyOutputImg, __global BYTE *in
             top = i + rn;
             bottom = i + rp;
             if(left<0){left = 0;}
-            if(right>=width){right = width - 1;}
+if(right>=width){right = width - 1;}
             if(top < 0){top = 0;}
             if(bottom>=height){bottom = height - 1;}
                 
@@ -363,3 +441,136 @@ __kernel void pad_image_1px(
     outputImageR[(y + 1) * padded_width + (x + 1)] = inputImageR[y * w + x];
     }
 
+__kernel void populate_integral_tables_row(
+        __global uchar *inputImageL,
+        __global uchar *inputImageR,
+        __global uint *inputIntegralTempL,
+        __global uint *inputIntegralTempR,
+        __global ulong *inputIntegralSquaredTempL,
+        __global ulong *inputIntegralSquaredTempR,
+        int img_w,
+        int img_h
+        )
+{
+    int y = get_global_id(0);
+
+    if (y >= img_h) return;
+
+    unsigned int row_sumL = 0;
+    unsigned int row_sumR = 0;
+    unsigned long row_sum_squaredL = 0;
+    unsigned long row_sum_squaredR = 0;
+
+    for (int x = 0; x < img_w; x++)
+    {
+        row_sumL += inputImageL[y * img_w + x];
+        row_sumR += inputImageR[y * img_w + x];
+
+        ulong valL = (ulong)inputImageL[y*img_w+x];
+        ulong valR = (ulong)inputImageR[y*img_w+x];
+
+        row_sum_squaredL += valL * valL;
+        row_sum_squaredR += valR * valR;
+
+        inputIntegralTempL[y * img_w + x] = row_sumL;
+        inputIntegralTempR[y * img_w + x] = row_sumR;
+        inputIntegralSquaredTempL[y * img_w + x] = row_sum_squaredL;
+        inputIntegralSquaredTempR[y * img_w + x] = row_sum_squaredR;
+        
+    }
+}
+
+__kernel void populate_integral_tables_col(
+        __global uint *inputIntegralTempL,
+        __global uint *inputIntegralTempR,
+        __global ulong *inputIntegralSquaredTempL,
+        __global ulong *inputIntegralSquaredTempR,
+        __global uint *inputIntegralL,
+        __global uint *inputIntegralR,
+        __global ulong *inputIntegralSquaredL,
+        __global ulong *inputIntegralSquaredR,
+        int img_w,
+        int img_h
+        )
+{
+    int x = get_global_id(0);
+
+    if (x >= img_w) return;
+
+    unsigned int col_sumL = 0;
+    unsigned int col_sumR = 0;
+    unsigned long col_sum_squaredL = 0;
+    unsigned long col_sum_squaredR = 0;
+
+    for (int y = 0; y < img_h; y++)
+    {
+        col_sumL += inputIntegralTempL[y * img_w + x];
+        col_sumR += inputIntegralTempR[y * img_w + x];
+        col_sum_squaredL += inputIntegralSquaredTempL[y * img_w + x];
+        col_sum_squaredR += inputIntegralSquaredTempR[y * img_w + x];
+
+        inputIntegralL[y * img_w + x] = col_sumL;
+        inputIntegralR[y * img_w + x] = col_sumR;
+        inputIntegralSquaredL[y * img_w + x] = col_sum_squaredL;
+        inputIntegralSquaredR[y * img_w + x] = col_sum_squaredR;
+        
+    }
+}
+
+__kernel void populate_mean_var_tables(
+        __global uint *inputIntegralL,
+        __global uint *inputIntegralR,
+        __global ulong *inputIntegralSquaredL,
+        __global ulong *inputIntegralSquaredR,
+        __global float *meanTableL,
+        __global float *meanTableR,
+        __global float *varTableL,
+        __global float *varTableR,
+        int img_w,
+        int img_h,
+        int window
+        )
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+
+    int n = window / 2;
+
+    if(x < n + 1 || x >= img_w - n - 1 || y < n + 1 || y >= img_h - n - 1) return;
+
+    int y_idx_min = y - n - 1;
+    int x_idx_min = x - n - 1;
+    int y_idx_max = y + n;
+    int x_idx_max = x + n;
+
+
+    uint S0_0L = inputIntegralL[y_idx_min * img_w + x_idx_min];
+    uint S2_2L = inputIntegralL[y_idx_max * img_w + x_idx_max];
+    uint S2_0L = inputIntegralL[y_idx_max * img_w + x_idx_min];
+    uint S0_2L = inputIntegralL[y_idx_min * img_w + x_idx_max];
+    ulong SQ0_0L = inputIntegralSquaredL[y_idx_min * img_w + x_idx_min];
+    ulong SQ2_2L = inputIntegralSquaredL[y_idx_max * img_w + x_idx_max];
+    ulong SQ2_0L = inputIntegralSquaredL[y_idx_max * img_w + x_idx_min];
+    ulong SQ0_2L = inputIntegralSquaredL[y_idx_min * img_w + x_idx_max];
+
+    uint S0_0R = inputIntegralR[y_idx_min * img_w + x_idx_min];
+    uint S2_2R = inputIntegralR[y_idx_max * img_w + x_idx_max];
+    uint S2_0R = inputIntegralR[y_idx_max * img_w + x_idx_min];
+    uint S0_2R = inputIntegralR[y_idx_min * img_w + x_idx_max];
+    ulong SQ0_0R = inputIntegralSquaredR[y_idx_min * img_w + x_idx_min];
+    ulong SQ2_2R = inputIntegralSquaredR[y_idx_max * img_w + x_idx_max];
+    ulong SQ2_0R = inputIntegralSquaredR[y_idx_max * img_w + x_idx_min];
+    ulong SQ0_2R = inputIntegralSquaredR[y_idx_min * img_w + x_idx_max];
+
+    float sumL = (float)(S2_2L + S0_0L - S2_0L - S0_2L);
+    float sumSqL = (float)(SQ2_2L + SQ0_0L - SQ2_0L - SQ0_2L);
+    float sumR = (float)(S2_2R + S0_0R - S2_0R - S0_2R);
+    float sumSqR = (float)(SQ2_2R + SQ0_0R - SQ2_0R - SQ0_2R);
+
+    meanTableL[y * img_w + x] = sumL / window / window;
+    meanTableR[y * img_w + x] = sumR / window / window;
+
+    varTableL[y * img_w + x] = sumSqL / window / window - meanTableL[y * img_w + x] * meanTableL[y * img_w + x];
+    varTableR[y * img_w + x] = sumSqR / window / window - meanTableR[y * img_w + x] * meanTableR[y * img_w + x];
+
+}

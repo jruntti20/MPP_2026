@@ -119,7 +119,7 @@ int main(int argc, char **argv)
     unsigned int w = WIDTH;
     unsigned int h = HEIGHT;
     unsigned int d = MAX_DISPARITY;
-    int threshold = 20;
+    int threshold = 10;
     int neighbourhood_range = 50;
 
     int window = WINDOW;
@@ -217,7 +217,11 @@ int main(int argc, char **argv)
     uint32_t* inputIntegralR = (uint32_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint32_t));
     uint64_t* inputIntegralSquaredL = (uint64_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint64_t));
     uint64_t* inputIntegralSquaredR = (uint64_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint64_t));
-    uint32_t* inputIntegralDot = (uint32_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint32_t));
+
+    uint32_t* inputIntegralTempL = (uint32_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint32_t));
+    uint32_t* inputIntegralTempR = (uint32_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint32_t));
+    uint64_t* inputIntegralSquaredTempL = (uint64_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint64_t));
+    uint64_t* inputIntegralSquaredTempR = (uint64_t*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(uint64_t));
 
     float* meanTableL = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
     float* meanTableR = (float*)calloc((w / resize_factor + 2) * (h / resize_factor + 2), sizeof(float));
@@ -273,6 +277,8 @@ int main(int argc, char **argv)
     size_t imageSize = w*h*CHANNELS * sizeof(unsigned char);
     size_t tinyGrayImageSize = w/4 * h/4 * sizeof(unsigned char);
     size_t tinyGrayPaddedImageSize = (w/resize_factor + 2) * (h/resize_factor + 2) * sizeof(unsigned char);
+    size_t tinyGrayPaddedImageSize32 = (w/resize_factor + 2) * (h/resize_factor + 2) * sizeof(unsigned int);
+    size_t tinyGrayPaddedImageSize64 = (w/resize_factor + 2) * (h/resize_factor + 2) * sizeof(unsigned long);
 
     cl_mem leftBuffer = clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,imageSize,inputImageLeft,&err);
     cl_mem rightBuffer = clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,imageSize,inputImageRight,&err);
@@ -286,15 +292,19 @@ int main(int argc, char **argv)
     cl_mem crosscheckedBufL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, crosscheckedL, &err); 
     cl_mem occlusionBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, occlusionL, &err); 
 
-    cl_mem inputIntegralBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, inputIntegralL, &err);
-    cl_mem inputIntegralBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, inputIntegralR, &err);
-    cl_mem inputIntegralSquaredBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, inputIntegralSquaredL, &err);
-    cl_mem inputIntegralSquaredBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, inputIntegralSquaredR, &err);
+    cl_mem inputIntegralBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize32, inputIntegralL, &err);
+    cl_mem inputIntegralBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize32, inputIntegralR, &err);
+    cl_mem inputIntegralSquaredBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize64, inputIntegralSquaredL, &err);
+    cl_mem inputIntegralSquaredBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize64, inputIntegralSquaredR, &err);
+    cl_mem inputIntegralTempBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize32, inputIntegralTempL, &err);
+    cl_mem inputIntegralTempBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize32, inputIntegralTempR, &err);
+    cl_mem inputIntegralSquaredTempBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize64, inputIntegralSquaredTempL, &err);
+    cl_mem inputIntegralSquaredTempBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize64, inputIntegralSquaredTempR, &err);
 
-    cl_mem meanTableBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, meanTableL, &err);
-    cl_mem meanTableBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, meanTableR, &err);
-    cl_mem varTableBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, varTableL, &err);
-    cl_mem varTableBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize, varTableR, &err);
+    cl_mem meanTableBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize32, meanTableL, &err);
+    cl_mem meanTableBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize32, meanTableR, &err);
+    cl_mem varTableBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize32, varTableL, &err);
+    cl_mem varTableBufferR = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayPaddedImageSize32, varTableR, &err);
 
     // Load kernel functions
     std::string kernelSource1 = loadKernelSource(kernelPathStr);
@@ -375,28 +385,85 @@ int main(int argc, char **argv)
     //clFinish(queue);
     //clEnqueueReadBuffer(queue, debugBuf, CL_TRUE, 0, 8192, buffer, 0, NULL, NULL);
     //printf("%s\n", buffer);
+   
+    /* ---------- KERNEL 6-8 INTEGRAL IMAGE TABLES and MEAN VAR TABLES ---------- */
+    size_t global_integral_row[1] = {size_t(resized_h_padded)};
 
-    /* ---------- KERNEL 1 FAST ---------- */
+    cl_kernel kernel6 = clCreateKernel(program1, "populate_integral_tables_row", &err);
+    clSetKernelArg(kernel6, 0, sizeof(cl_mem), &tinyGrayPaddedBufferL);
+    clSetKernelArg(kernel6, 1, sizeof(cl_mem), &tinyGrayPaddedBufferR);
+    clSetKernelArg(kernel6, 2, sizeof(cl_mem), &inputIntegralTempBufferL);
+    clSetKernelArg(kernel6, 3, sizeof(cl_mem), &inputIntegralTempBufferR);
+    clSetKernelArg(kernel6, 4, sizeof(cl_mem), &inputIntegralSquaredTempBufferL);
+    clSetKernelArg(kernel6, 5, sizeof(cl_mem), &inputIntegralSquaredTempBufferR);
+    clSetKernelArg(kernel6, 6,sizeof(cl_int),&resized_w_padded);
+    clSetKernelArg(kernel6, 7,sizeof(cl_int),&resized_h_padded);
+
+    clEnqueueNDRangeKernel(queue, kernel6, 1, NULL, global_integral_row, NULL, 0, NULL, NULL);
+    clFinish(queue);
+
+    size_t global_integral_col[1] = {size_t(resized_w_padded)};
+    cl_kernel kernel7 = clCreateKernel(program1, "populate_integral_tables_col", &err);
+    clSetKernelArg(kernel7, 0, sizeof(cl_mem), &inputIntegralTempBufferL);
+    clSetKernelArg(kernel7, 1, sizeof(cl_mem), &inputIntegralTempBufferR);
+    clSetKernelArg(kernel7, 2, sizeof(cl_mem), &inputIntegralSquaredTempBufferL);
+    clSetKernelArg(kernel7, 3, sizeof(cl_mem), &inputIntegralSquaredTempBufferR);
+    clSetKernelArg(kernel7, 4, sizeof(cl_mem), &inputIntegralBufferL);
+    clSetKernelArg(kernel7, 5, sizeof(cl_mem), &inputIntegralBufferR);
+    clSetKernelArg(kernel7, 6, sizeof(cl_mem), &inputIntegralSquaredBufferL);
+    clSetKernelArg(kernel7, 7, sizeof(cl_mem), &inputIntegralSquaredBufferR);
+    clSetKernelArg(kernel7, 8,sizeof(cl_int),&resized_w_padded);
+    clSetKernelArg(kernel7, 9,sizeof(cl_int),&resized_h_padded);
+
+    clEnqueueNDRangeKernel(queue, kernel7, 1, NULL, global_integral_col, NULL, 0, NULL, NULL);
+    clFinish(queue);
+
     //size_t global2[3] = {size_t(resized_w),size_t(resized_h),size_t(d)};
     size_t global2[2] = {size_t(resized_w_padded),size_t(resized_h_padded)};
     //size_t global2[2] = {((resized_w + 15) / 16) * 16,((resized_h + 15) / 16) * 16};
     //size_t local2[2] = {16, 16};
+    
+    cl_kernel kernel8 = clCreateKernel(program1, "populate_mean_var_tables", &err);
+    clSetKernelArg(kernel8, 0, sizeof(cl_mem), &inputIntegralBufferL);
+    clSetKernelArg(kernel8, 1, sizeof(cl_mem), &inputIntegralBufferR);
+    clSetKernelArg(kernel8, 2, sizeof(cl_mem), &inputIntegralSquaredBufferL);
+    clSetKernelArg(kernel8, 3, sizeof(cl_mem), &inputIntegralSquaredBufferR);
+    clSetKernelArg(kernel8, 4, sizeof(cl_mem), &meanTableBufferL);
+    clSetKernelArg(kernel8, 5, sizeof(cl_mem), &meanTableBufferR);
+    clSetKernelArg(kernel8, 6, sizeof(cl_mem), &varTableBufferL);
+    clSetKernelArg(kernel8, 7, sizeof(cl_mem), &varTableBufferR);
+    clSetKernelArg(kernel8, 8, sizeof(cl_int),&resized_w_padded);
+    clSetKernelArg(kernel8, 9, sizeof(cl_int),&resized_h_padded);
+    clSetKernelArg(kernel8, 10, sizeof(cl_int),&window); 
+
+    clEnqueueNDRangeKernel(queue,kernel8,2,NULL,global2, NULL,0,NULL,NULL);
+    clFinish(queue);
+
+    // debugging
+    clEnqueueReadBuffer(queue, inputIntegralBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(unsigned int), inputIntegralL, 0, NULL, NULL);
+    clEnqueueReadBuffer(queue, inputIntegralSquaredBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(unsigned long), inputIntegralSquaredL, 0, NULL, NULL);
+    clEnqueueReadBuffer(queue, meanTableBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(float), meanTableL, 0, NULL, NULL);
+    clEnqueueReadBuffer(queue, varTableBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(float), varTableL, 0, NULL, NULL);
+
+    /* ---------- KERNEL 1 FAST ---------- */
     int disp_sign = 1;
 
     //std::string kernelSource1 = loadKernelSource("kernel_fast.cl");
 
     clEnqueueWriteBuffer(queue, debugIndex, CL_TRUE, 0, sizeof(int), &zero, 0, NULL, NULL);
 
-    cl_kernel kernel2 = clCreateKernel(program1,"zncc_fast",&err);
+    cl_kernel kernel2 = clCreateKernel(program1,"zncc_fast_integral",&err);
     clSetKernelArg(kernel2,0,sizeof(cl_mem),&tinyGrayPaddedBufferL);
     clSetKernelArg(kernel2,1,sizeof(cl_mem),&tinyGrayPaddedBufferR);
-    clSetKernelArg(kernel2,2,sizeof(cl_mem),&disparityBufferL);
-    clSetKernelArg(kernel2,3,sizeof(cl_int),&disp_sign);
-    clSetKernelArg(kernel2,4,sizeof(cl_int),&resized_w_padded);
-    clSetKernelArg(kernel2,5,sizeof(cl_int),&resized_h_padded);
-    clSetKernelArg(kernel2,6, sizeof(cl_int),&window); 
-    clSetKernelArg(kernel2,7,sizeof(cl_mem),&debugBuf);
-    clSetKernelArg(kernel2,8,sizeof(cl_mem),&debugIndex);
+    clSetKernelArg(kernel2,2, sizeof(cl_mem), &meanTableBufferL);
+    clSetKernelArg(kernel2,3, sizeof(cl_mem), &meanTableBufferR);
+    clSetKernelArg(kernel2,4, sizeof(cl_mem), &varTableBufferL);
+    clSetKernelArg(kernel2,5, sizeof(cl_mem), &varTableBufferR);
+    clSetKernelArg(kernel2,6,sizeof(cl_mem),&disparityBufferL);
+    clSetKernelArg(kernel2,7,sizeof(cl_int),&disp_sign);
+    clSetKernelArg(kernel2,8,sizeof(cl_int),&resized_w_padded);
+    clSetKernelArg(kernel2,9,sizeof(cl_int),&resized_h_padded);
+    clSetKernelArg(kernel2,10, sizeof(cl_int),&window); 
 
 
     clEnqueueNDRangeKernel(queue,kernel2,2,NULL,global2, NULL,0,NULL,NULL);
@@ -426,16 +493,18 @@ int main(int argc, char **argv)
 
     disp_sign = -1;
 
-    kernel2 = clCreateKernel(program1,"zncc_fast",&err);
+    kernel2 = clCreateKernel(program1,"zncc_fast_integral",&err);
     clSetKernelArg(kernel2,0,sizeof(cl_mem),&tinyGrayPaddedBufferR);
     clSetKernelArg(kernel2,1,sizeof(cl_mem),&tinyGrayPaddedBufferL);
-    clSetKernelArg(kernel2,2,sizeof(cl_mem),&disparityBufferR);
-    clSetKernelArg(kernel2,3,sizeof(cl_int),&disp_sign);
-    clSetKernelArg(kernel2,4,sizeof(cl_int),&resized_w_padded);
-    clSetKernelArg(kernel2,5,sizeof(cl_int),&resized_h_padded);
-    clSetKernelArg(kernel2,6, sizeof(cl_int),&window); 
-    clSetKernelArg(kernel2,7,sizeof(cl_mem),&debugBuf);
-    clSetKernelArg(kernel2,8,sizeof(cl_mem),&debugIndex);
+    clSetKernelArg(kernel2,2, sizeof(cl_mem), &meanTableBufferR);
+    clSetKernelArg(kernel2,3, sizeof(cl_mem), &meanTableBufferL);
+    clSetKernelArg(kernel2,4, sizeof(cl_mem), &varTableBufferR);
+    clSetKernelArg(kernel2,5, sizeof(cl_mem), &varTableBufferL);
+    clSetKernelArg(kernel2,6,sizeof(cl_mem),&disparityBufferR);
+    clSetKernelArg(kernel2,7,sizeof(cl_int),&disp_sign);
+    clSetKernelArg(kernel2,8,sizeof(cl_int),&resized_w_padded);
+    clSetKernelArg(kernel2,9,sizeof(cl_int),&resized_h_padded);
+    clSetKernelArg(kernel2,10, sizeof(cl_int),&window); 
 
     clEnqueueNDRangeKernel(queue,kernel2,2,NULL,global2, NULL,0, NULL,NULL);
     clFinish(queue);
