@@ -1,5 +1,7 @@
 
 #ifdef __linux__ 
+    #include <unistd.h>
+    #include <linux/limits.h>
     #include <filesystem>
     #include <iostream>
     #include <fstream>
@@ -57,13 +59,12 @@ std::filesystem::path getExecutableFolderPath() {
 #endif
     }
 
-std::string loadKernelSource(const char* filename, std::string &src_path)
+std::string loadKernelSource(std::string &src_path)
 {
-    src_path.append(filename);
     std::ifstream file(src_path);
     if(!file.is_open())
     {
-        std::cerr << "Failed to open kernel file: " << filename << std::endl;
+        std::cerr << "Failed to open kernel file: " << src_path << std::endl;
         exit(1);
     }
     return std::string(
@@ -101,15 +102,16 @@ int main(int argc, char **argv)
     char outputImagesPath[256]{};
     char kernelPath[256]{};
 
-    std::string imgPathLeftStr = executableFolderPath + "/img/im0.png";
-    std::string imgPathRightStr = executableFolderPath + "/img/im1.png";
-    std::string outputPath = executableFolderPath + "/Output_images/";
+    std::string imgPathLeftStr = executableFolderPath + "../img/im0.png";
+    std::string imgPathRightStr = executableFolderPath + "../img/im1.png";
+    std::string outputPath = executableFolderPath + "../Output_images/";
+    std::string kernelPathStr = executableFolderPath + "../src/kernels.cl";
 
 
     strncpy(imgPathLeft, imgPathLeftStr.c_str(), imgPathLeftStr.length());
     strncpy(imgPathRight, imgPathRightStr.c_str(), imgPathRightStr.length());
     strncpy(outputImagesPath, outputPath.c_str(), outputPath.length());
-    strncpy(kernelPath, executableFolderPath.c_str(), executableFolderPath.length());
+    strncpy(kernelPath, kernelPathStr.c_str(), kernelPathStr.length());
 
 
     unsigned int w = WIDTH;
@@ -184,7 +186,7 @@ int main(int argc, char **argv)
             }
         }
 
-    std::string kernelPathStr = std::string(kernelPath);
+    kernelPathStr = std::string(kernelPath);
     //unsigned char* inputImageLeft = NULL;
     //unsigned char* inputImageRight = NULL;
 
@@ -256,7 +258,7 @@ int main(int argc, char **argv)
     cl_mem occlusionBufferL = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, tinyGrayImageSize, occlusionL, &err); 
 
     // Load kernel functions
-    std::string kernelSource1 = loadKernelSource("kernels.cl", kernelPathStr);
+    std::string kernelSource1 = loadKernelSource(kernelPathStr);
     const char* src1 = kernelSource1.c_str();
     size_t src1size = kernelSource1.length();
 
