@@ -1,5 +1,16 @@
 #include "getAverage.h"
+#include <immintrin.h>
 #include "zncc_integral.h"
+
+namespace
+{
+inline float horizontal_sum_epi32(__m128i value)
+{
+    value = _mm_hadd_epi32(value, value);
+    value = _mm_hadd_epi32(value, value);
+    return static_cast<float>(_mm_cvtsi128_si32(value));
+}
+}
 
 template <typename T> T get_window_sum(T *integralImage, int img_w, int x, int y, int r)
 {
@@ -15,6 +26,8 @@ void zncc_worker(ThreadData *data)
 {
     int r = data->window_size / 2;
     int N = data->window_size * data->window_size;
+    const int simdWidth = 16;
+    const __m128i zero = _mm_setzero_si128();
 
     for(int y = data->y_start; y < data->y_end; y++)
     {
@@ -48,21 +61,38 @@ void zncc_worker(ThreadData *data)
                 if(varB < 1e-6f) continue;
 
                 float dot = 0.0f;
+                __m128i dotAccum = _mm_setzero_si128();
 
                 for (int j = -r; j <= r; j++)
                 {
-                    for (int i = -r; i <= r; i++)
+                    const unsigned char* leftRow = data->left + (y + j) * data->img_w + (x - r);
+                    const unsigned char* rightRow = data->right + (y + j) * data->img_w + (xr - r);
+                    int i = 0;
+
+                    for (; i <= data->window_size - simdWidth; i += simdWidth)
                     {
+                        const __m128i leftPixels = _mm_loadu_si128(reinterpret_cast<const __m128i*>(leftRow + i));
+                        const __m128i rightPixels = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rightRow + i));
 
-                        float a = data->left[(y+j)*data->img_w + x + i];
-                        float b = data->right[(y+j)*data->img_w + xr + i];
+                        const __m128i leftLo = _mm_unpacklo_epi8(leftPixels, zero);
+                        const __m128i leftHi = _mm_unpackhi_epi8(leftPixels, zero);
+                        const __m128i rightLo = _mm_unpacklo_epi8(rightPixels, zero);
+                        const __m128i rightHi = _mm_unpackhi_epi8(rightPixels, zero);
 
-                        dot += a*b;
+                        dotAccum = _mm_add_epi32(dotAccum, _mm_madd_epi16(leftLo, rightLo));
+                        dotAccum = _mm_add_epi32(dotAccum, _mm_madd_epi16(leftHi, rightHi));
+                    }
+
+                    for (; i < data->window_size; i++)
+                    {
+                        dot += static_cast<float>(leftRow[i]) * static_cast<float>(rightRow[i]);
                     }
                 }
 
+                dot += horizontal_sum_epi32(dotAccum);
+
                 float numerator = dot - N * meanA * meanB;
-                float denom = sqrt(varA * varB) * N + 1e-6f;
+                float denom = sqrtf(varA * varB) * N + 1e-6f;
 
                 float zncc = numerator / denom;
 
@@ -148,5 +178,3 @@ void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputIm
             varTableR[y * img_w + x] = (SQ2_2R + SQ0_0R - SQ2_0R - SQ0_2R)/ (float)win_size / (float)win_size - meanTableR[y * img_w + x] * meanTableR[y * img_w + x];
     }
 }
-
-
