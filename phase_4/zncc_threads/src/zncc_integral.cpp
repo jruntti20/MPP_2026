@@ -4,6 +4,8 @@
 
 namespace
 {
+// Reduce four 32-bit lane sums in one SIMD register into one scalar float.
+// After the SIMD dot-product loop, each lane contains a partial sum.
 inline float horizontal_sum_epi32(__m128i value)
 {
     value = _mm_hadd_epi32(value, value);
@@ -26,6 +28,7 @@ void zncc_worker(ThreadData *data)
 {
     int r = data->window_size / 2;
     int N = data->window_size * data->window_size;
+    // One 128-bit register holds 16 unsigned char pixels.
     const int simdWidth = 16;
     const __m128i zero = _mm_setzero_si128();
 
@@ -37,6 +40,8 @@ void zncc_worker(ThreadData *data)
         }
         for(int x = r; x < data->img_w - r; x++)
         {
+            // Skip the padded border. The integral-image based variance/mean tables
+            // and window accesses assume a fully valid neighborhood around (x, y).
             if (x - r == 0 || x + r == data->img_w - 1)
             {
                 continue; // Exclude padded edges
@@ -46,10 +51,12 @@ void zncc_worker(ThreadData *data)
 
             float meanA = data->meanL[y * data->img_w + x];
             float varA = data->varL[y * data->img_w + x];
+            // Flat windows are not informative for correlation.
             if(varA < 1e-6f) continue;
 
             for (int d = 0; d < data->max_disp; d++)
             {
+                // Compare left pixel x against right pixel xr for disparity d.
                 int xr = x - d * data->disp_sign;
                 if (xr - r < 0 || xr + r >= data->img_w)
                 {
@@ -60,37 +67,52 @@ void zncc_worker(ThreadData *data)
                 float varB = data->varR[y * data->img_w + xr];
                 if(varB < 1e-6f) continue;
 
+                // Final dot product for this (x, y, d):
+                // sum over the window of leftPixel * rightPixel.
+                // We accumulate part of it in SIMD lanes and the remainder in scalar.
                 float dot = 0.0f;
                 __m128i dotAccum = _mm_setzero_si128();
 
                 for (int j = -r; j <= r; j++)
                 {
+                    // Start of the current row inside the correlation window.
                     const unsigned char* leftRow = data->left + (y + j) * data->img_w + (x - r);
                     const unsigned char* rightRow = data->right + (y + j) * data->img_w + (xr - r);
                     int i = 0;
 
                     for (; i <= data->window_size - simdWidth; i += simdWidth)
                     {
+                        // Load 16 grayscale pixels from both windows.
                         const __m128i leftPixels = _mm_loadu_si128(reinterpret_cast<const __m128i*>(leftRow + i));
                         const __m128i rightPixels = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rightRow + i));
 
+                        // Expand 8-bit pixels into 16-bit values so the products fit safely.
+                        // Low and high halves are expanded separately.
                         const __m128i leftLo = _mm_unpacklo_epi8(leftPixels, zero);
                         const __m128i leftHi = _mm_unpackhi_epi8(leftPixels, zero);
                         const __m128i rightLo = _mm_unpacklo_epi8(rightPixels, zero);
                         const __m128i rightHi = _mm_unpackhi_epi8(rightPixels, zero);
 
+                        // _mm_madd_epi16 multiplies adjacent 16-bit pairs and adds them
+                        // into 32-bit lanes:
+                        // lane0 = a0*b0 + a1*b1, lane1 = a2*b2 + a3*b3, ...
+                        // This is the core SIMD speedup for the dot product.
                         dotAccum = _mm_add_epi32(dotAccum, _mm_madd_epi16(leftLo, rightLo));
                         dotAccum = _mm_add_epi32(dotAccum, _mm_madd_epi16(leftHi, rightHi));
                     }
 
+                    // Handle the tail when window_size is not a multiple of 16.
                     for (; i < data->window_size; i++)
                     {
                         dot += static_cast<float>(leftRow[i]) * static_cast<float>(rightRow[i]);
                     }
                 }
 
+                // Collapse the four SIMD partial sums into one scalar and add it to dot.
                 dot += horizontal_sum_epi32(dotAccum);
 
+                // With means and variances already precomputed from integral tables,
+                // only the numerator dot term needs to be accumulated here.
                 float numerator = dot - N * meanA * meanB;
                 float denom = sqrtf(varA * varB) * N + 1e-6f;
 
@@ -113,6 +135,9 @@ void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputIm
 {
     int n = (win_size/2);
 
+    // Build summed-area tables for pixel values and squared pixel values.
+    // These tables let us query any window sum in O(1), which avoids recomputing
+    // means and variances from scratch for every disparity candidate.
     for (int y = 0; y < img_h; y++)
     {
         unsigned int row_sum1 = 0;
@@ -145,6 +170,8 @@ void populate_integral_tables(unsigned char *inputImage1, unsigned char *inputIm
         }
     }
 
+    // Convert integral-image sums into per-pixel mean and variance tables.
+    // These are later reused by every thread in zncc_worker.
     for (int y = n + 1; y < img_h - n - 1; y++)
         for (int x = n + 1; x < img_w - n - 1; x++)
         {
