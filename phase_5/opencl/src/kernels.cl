@@ -414,12 +414,14 @@ if(right>=width){right = width - 1;}
                 }
             }
             if(pixval != 0.0f){
-                readyOutputImg[idx] = pixval;
+                //readyOutputImg[idx] = pixval;
+                readyOutputImg[idx] = (uchar)(pixval * 255 / MAX_DISPARITY);
                 break;
             }
         }
     } else {
-        readyOutputImg[idx] = inputImageL[idx];
+        //readyOutputImg[idx] = inputImageL[idx];
+        readyOutputImg[idx] = (uchar)(inputImageL[idx] * 255 / MAX_DISPARITY);
     }
 }
 
