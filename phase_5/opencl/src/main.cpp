@@ -440,10 +440,10 @@ int main(int argc, char **argv)
     clFinish(queue);
 
     // debugging
-    clEnqueueReadBuffer(queue, inputIntegralBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(unsigned int), inputIntegralL, 0, NULL, NULL);
-    clEnqueueReadBuffer(queue, inputIntegralSquaredBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(unsigned long), inputIntegralSquaredL, 0, NULL, NULL);
-    clEnqueueReadBuffer(queue, meanTableBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(float), meanTableL, 0, NULL, NULL);
-    clEnqueueReadBuffer(queue, varTableBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(float), varTableL, 0, NULL, NULL);
+    //clEnqueueReadBuffer(queue, inputIntegralBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(unsigned int), inputIntegralL, 0, NULL, NULL);
+    //clEnqueueReadBuffer(queue, inputIntegralSquaredBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(unsigned long), inputIntegralSquaredL, 0, NULL, NULL);
+    //clEnqueueReadBuffer(queue, meanTableBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(float), meanTableL, 0, NULL, NULL);
+    //clEnqueueReadBuffer(queue, varTableBufferL, CL_TRUE, 0, resized_w_padded * resized_h_padded * sizeof(float), varTableL, 0, NULL, NULL);
 
     /* ---------- KERNEL 1 FAST ---------- */
     int disp_sign = 1;
@@ -608,13 +608,40 @@ int main(int argc, char **argv)
     /* ---------- CLEANUP ---------- */
     clReleaseKernel(kernel1);
     clReleaseKernel(kernel2);
+    clReleaseKernel(kernel3);
+    clReleaseKernel(kernel4);
+    clReleaseKernel(kernel5);
+    clReleaseKernel(kernel6);
+    clReleaseKernel(kernel7);
+    clReleaseKernel(kernel8);
+
     clReleaseProgram(program1);
+
     clReleaseMemObject(leftBuffer);
     clReleaseMemObject(rightBuffer);
     clReleaseMemObject(tinyGrayBufferL);
     clReleaseMemObject(tinyGrayBufferR);
+    clReleaseMemObject(tinyGrayPaddedBufferL);
+    clReleaseMemObject(tinyGrayPaddedBufferR);
+    clReleaseMemObject(inputIntegralTempBufferL);
+    clReleaseMemObject(inputIntegralTempBufferR);
+    clReleaseMemObject(inputIntegralSquaredTempBufferL);
+    clReleaseMemObject(inputIntegralSquaredTempBufferR);
+    clReleaseMemObject(inputIntegralBufferL);
+    clReleaseMemObject(inputIntegralBufferR);
+    clReleaseMemObject(inputIntegralSquaredBufferL);
+    clReleaseMemObject(inputIntegralSquaredBufferR);
+
+    clReleaseMemObject(meanTableBufferL);
+    clReleaseMemObject(varTableBufferL);
+    clReleaseMemObject(meanTableBufferR);
+    clReleaseMemObject(varTableBufferR);
+
     clReleaseMemObject(disparityBufferL);
     clReleaseMemObject(disparityBufferR);
+    clReleaseMemObject(crosscheckedBufL);
+    clReleaseMemObject(occlusionBufferL);
+
     clReleaseCommandQueue(queue);
     clReleaseContext(context);
 
@@ -622,6 +649,22 @@ int main(int argc, char **argv)
     free(inputImageRight);
     free(tinyGrayLeft);
     free(tinyGrayRight);
+    free(tinyGrayLeftPadded);
+    free(tinyGrayRightPadded);
+    free(inputIntegralL);
+    free(inputIntegralR);
+    free(inputIntegralSquaredL);
+    free(inputIntegralSquaredR);
+    free(inputIntegralTempL);
+    free(inputIntegralTempR);
+    free(inputIntegralSquaredTempL);
+    free(inputIntegralSquaredTempR);
+
+    free(meanTableL);
+    free(meanTableR);
+    free(varTableL);
+    free(varTableR);
+
     free(disparityL);
     free(disparityR);
     free(crosscheckedL);
