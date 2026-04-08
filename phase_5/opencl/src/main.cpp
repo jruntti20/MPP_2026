@@ -1,22 +1,32 @@
 #include <iostream>
 #include <fstream>
+#include <string>
 #include <vector>
 #include <CL/cl.h>
 #include "lodepng.h"
 #include <sys/time.h>
 
+// Input image dimensions and storage format.
 #define WIDTH 2940
 #define HEIGHT 2016
 #define CHANNELS 4
-#define MAX_DISPARITY 64
-#define WINDOW 5
-#define OCC_RANGE 16
 
-#define BLOCK_SIZE 16
+// Stereo pipeline tuning parameters.
+// ZNCC_MAX_DISPARITY: largest horizontal disparity tested during matching.
+// ZNCC_WINDOW_RADIUS: half-width of the ZNCC support window, so the full window is (2r + 1)^2 pixels.
+// CROSS_CHECK_THRESHOLD: largest allowed left/right disparity mismatch in the 0-255 disparity scale.
+// OCCLUSION_FILL_RANGE_FULL_RES: horizontal search distance used for filling invalid pixels at full resolution.
+#define BLOCK_SIZE 8 //Work grooup size of occlusion fill kernel
+#define ZNCC_MAX_DISPARITY 256
+#define ZNCC_WINDOW_RADIUS 8
+#define CROSS_CHECK_THRESHOLD 16
+#define OCCLUSION_FILL_RANGE_FULL_RES 16
 
 #define SCALE 4
 #define RESIZED_WIDTH (WIDTH / SCALE)
 #define RESIZED_HEIGHT (HEIGHT / SCALE)
+// The matching pipeline runs on downsampled images, so the fill range is scaled to the resized resolution.
+#define OCCLUSION_FILL_RANGE (OCCLUSION_FILL_RANGE_FULL_RES / SCALE)
 
 typedef unsigned char BYTE;
 struct timeval t[6];
@@ -41,6 +51,8 @@ int main()
 {
     const char imgPathLeft[] = "../img/im0.png";
     const char imgPathRight[] = "../img/im1.png";
+    const char znccOutputPathLeft[] = "../Output_images/depth_zncc_left.png";
+    const char znccOutputPathRight[] = "../Output_images/depth_zncc_right.png";
 
     unsigned int w = WIDTH;
     unsigned int h = HEIGHT;
@@ -155,7 +167,10 @@ int main()
     const char* src1 = kernelSource1.c_str();
     size_t src1size = kernelSource1.length();
     cl_program program1 = clCreateProgramWithSource(context, 1, &src1, &src1size, &err);
-    err = clBuildProgram(program1, 1, &device, nullptr, nullptr, nullptr);
+    std::string znccBuildOptions =
+        "-D ZNCC_MAX_DISPARITY=" + std::to_string(ZNCC_MAX_DISPARITY) +
+        " -D ZNCC_WINDOW_RADIUS=" + std::to_string(ZNCC_WINDOW_RADIUS);
+    err = clBuildProgram(program1, 1, &device, znccBuildOptions.c_str(), nullptr, nullptr);
 
     cl_kernel kernel1 = clCreateKernel(program1, "zncc_fast", &err);
 
@@ -178,6 +193,13 @@ int main()
 
     clEnqueueNDRangeKernel(queue, kernel1, 2, nullptr, global, nullptr, 0, nullptr, nullptr);
     clFinish(queue);
+
+    // Save the raw left/right ZNCC disparity maps before cross-checking and occlusion filling.
+    clEnqueueReadBuffer(queue, dispLBuffer, CL_TRUE, 0, rw*rh, disparityL.data(), 0, nullptr, nullptr);
+    clEnqueueReadBuffer(queue, dispRBuffer, CL_TRUE, 0, rw*rh, disparityR.data(), 0, nullptr, nullptr);
+    lodepng_encode_file(znccOutputPathLeft, disparityL.data(), rw, rh, LCT_GREY, 8);
+    lodepng_encode_file(znccOutputPathRight, disparityR.data(), rw, rh, LCT_GREY, 8);
+
     gettimeofday(&t[2], NULL);
 
     /* ---------- CROSS CHECK ---------- */
@@ -192,12 +214,12 @@ int main()
 
     cl_kernel crossKernel = clCreateKernel(crossProgram, "cross_check", &err);
 
-    int threshold = 2;
+    int crossCheckThreshold = CROSS_CHECK_THRESHOLD;
 
     clSetKernelArg(crossKernel, 0, sizeof(cl_mem), &dispLBuffer);
     clSetKernelArg(crossKernel, 1, sizeof(cl_mem), &dispRBuffer);
     clSetKernelArg(crossKernel, 2, sizeof(cl_mem), &crossBuffer);
-    clSetKernelArg(crossKernel, 3, sizeof(int), &threshold);
+    clSetKernelArg(crossKernel, 3, sizeof(int), &crossCheckThreshold);
     clSetKernelArg(crossKernel, 4, sizeof(int), &rw);
     clSetKernelArg(crossKernel, 5, sizeof(int), &rh);
 
@@ -218,13 +240,13 @@ int main()
 
     cl_kernel occKernel = clCreateKernel(occProgram, "occlusion_fill_opt", &err);
 
-    int range = OCC_RANGE / 4;
+    int occlusionFillRange = OCCLUSION_FILL_RANGE;
 
     clSetKernelArg(occKernel, 0, sizeof(cl_mem), &crossBuffer);
     clSetKernelArg(occKernel, 1, sizeof(cl_mem), &filledBuffer);
     clSetKernelArg(occKernel, 2, sizeof(int), &rw);
     clSetKernelArg(occKernel, 3, sizeof(int), &rh);
-    clSetKernelArg(occKernel, 4, sizeof(int), &range);
+    clSetKernelArg(occKernel, 4, sizeof(int), &occlusionFillRange);
 
     size_t local[2] = {BLOCK_SIZE, BLOCK_SIZE};
     size_t globalFill[2] = {
