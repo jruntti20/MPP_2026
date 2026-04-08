@@ -5,6 +5,7 @@ __kernel void cross_check(
     __global const uchar* dispR,
     __global uchar* output,
     const int threshold,
+    const int max_disparity,
     const int width,
     const int height)
 {
@@ -16,8 +17,9 @@ __kernel void cross_check(
 
     int idx = y * width + x;
     uchar dL = dispL[idx];
+    int dispLPixels = ((int)dL * max_disparity + 127) / 255;
 
-    int xr = x - dL;
+    int xr = x - dispLPixels;
     if(xr < 0 || xr >= width)
     {
         output[idx] = 0;
@@ -25,8 +27,9 @@ __kernel void cross_check(
     }
 
     uchar dR = dispR[y * width + xr];
+    int dispRPixels = ((int)dR * max_disparity + 127) / 255;
 
-    if(abs((int)dL - (int)dR) > threshold)
+    if(abs(dispLPixels - dispRPixels) > threshold)
         output[idx] = 0;
     else
         output[idx] = dL;

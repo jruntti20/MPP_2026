@@ -12,14 +12,16 @@
 #define CHANNELS 4
 
 // Stereo pipeline tuning parameters.
-// ZNCC_MAX_DISPARITY: largest horizontal disparity tested during matching.
-// ZNCC_WINDOW_RADIUS: half-width of the ZNCC support window, so the full window is (2r + 1)^2 pixels.
-// CROSS_CHECK_THRESHOLD: largest allowed left/right disparity mismatch in the 0-255 disparity scale.
+// ZNCC_MAX_DISPARITY_FULL_RES: largest disparity expected in the original full-resolution input.
+// ZNCC_MAX_DISPARITY: disparity search range used on the downsampled images.
+// ZNCC_WINDOW_RADIUS: half-width of the ZNCC support window on the downsampled images.
+// CROSS_CHECK_THRESHOLD_PIXELS: largest allowed left/right disparity mismatch in disparity pixels.
 // OCCLUSION_FILL_RANGE_FULL_RES: horizontal search distance used for filling invalid pixels at full resolution.
-#define BLOCK_SIZE 8 //Work grooup size of occlusion fill kernel
-#define ZNCC_MAX_DISPARITY 256
-#define ZNCC_WINDOW_RADIUS 8
-#define CROSS_CHECK_THRESHOLD 16
+#define BLOCK_SIZE 8 // Workgroup size of the occlusion fill kernel.
+#define ZNCC_MAX_DISPARITY_FULL_RES 256
+#define ZNCC_MAX_DISPARITY (ZNCC_MAX_DISPARITY_FULL_RES / SCALE)
+#define ZNCC_WINDOW_RADIUS 4
+#define CROSS_CHECK_THRESHOLD_PIXELS 2
 #define OCCLUSION_FILL_RANGE_FULL_RES 16
 
 #define SCALE 4
@@ -214,14 +216,16 @@ int main()
 
     cl_kernel crossKernel = clCreateKernel(crossProgram, "cross_check", &err);
 
-    int crossCheckThreshold = CROSS_CHECK_THRESHOLD;
+    int crossCheckThresholdPixels = CROSS_CHECK_THRESHOLD_PIXELS;
+    int maxDisparity = ZNCC_MAX_DISPARITY;
 
     clSetKernelArg(crossKernel, 0, sizeof(cl_mem), &dispLBuffer);
     clSetKernelArg(crossKernel, 1, sizeof(cl_mem), &dispRBuffer);
     clSetKernelArg(crossKernel, 2, sizeof(cl_mem), &crossBuffer);
-    clSetKernelArg(crossKernel, 3, sizeof(int), &crossCheckThreshold);
-    clSetKernelArg(crossKernel, 4, sizeof(int), &rw);
-    clSetKernelArg(crossKernel, 5, sizeof(int), &rh);
+    clSetKernelArg(crossKernel, 3, sizeof(int), &crossCheckThresholdPixels);
+    clSetKernelArg(crossKernel, 4, sizeof(int), &maxDisparity);
+    clSetKernelArg(crossKernel, 5, sizeof(int), &rw);
+    clSetKernelArg(crossKernel, 6, sizeof(int), &rh);
 
     clEnqueueNDRangeKernel(queue, crossKernel, 2, nullptr, global, nullptr, 0, nullptr, nullptr);
     clFinish(queue);
