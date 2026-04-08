@@ -1,5 +1,10 @@
-#define MAX_DISPARITY 256
-#define WINDOW 5
+#ifndef ZNCC_MAX_DISPARITY
+#define ZNCC_MAX_DISPARITY 256
+#endif
+
+#ifndef ZNCC_WINDOW_RADIUS
+#define ZNCC_WINDOW_RADIUS 16
+#endif
 
 __kernel void zncc_fast(
     __global uchar* left,
@@ -12,7 +17,8 @@ __kernel void zncc_fast(
     int x = get_global_id(0);
     int y = get_global_id(1);
 
-    if(x < WINDOW || y < WINDOW || x >= width-WINDOW || y >= height-WINDOW)
+    if(x < ZNCC_WINDOW_RADIUS || y < ZNCC_WINDOW_RADIUS ||
+       x >= width - ZNCC_WINDOW_RADIUS || y >= height - ZNCC_WINDOW_RADIUS)
     {
         disparity[y*width+x] = 0;
         return;
@@ -21,13 +27,13 @@ __kernel void zncc_fast(
     int best_d = 0;
     float best_score = -1.0f;
 
-    for(int d=0; d<MAX_DISPARITY && x+d < width-WINDOW; d++)
+    for(int d=0; d<ZNCC_MAX_DISPARITY && x+d < width-ZNCC_WINDOW_RADIUS; d++)
     {
         float sumL=0,sumR=0,sumLR=0,sumL2=0,sumR2=0;
         int count=0;
 
-        for(int wy=-WINDOW; wy<=WINDOW; wy++)
-        for(int wx=-WINDOW; wx<=WINDOW; wx++)
+        for(int wy=-ZNCC_WINDOW_RADIUS; wy<=ZNCC_WINDOW_RADIUS; wy++)
+        for(int wx=-ZNCC_WINDOW_RADIUS; wx<=ZNCC_WINDOW_RADIUS; wx++)
         {
             int xl=x+wx;
             int yl=y+wy;
@@ -71,5 +77,5 @@ __kernel void zncc_fast(
         }
     }
 
-    disparity[y*width+x] = abs(best_d) * 255 / MAX_DISPARITY;
+    disparity[y*width+x] = abs(best_d) * 255 / ZNCC_MAX_DISPARITY;
 }
