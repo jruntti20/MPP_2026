@@ -454,7 +454,7 @@ int main(int argc, char **argv)
     clEnqueueWriteBuffer(queue, debugIndex, CL_TRUE, 0, sizeof(int), &zero, 0, NULL, NULL);
 
 
-    size_t global3[2] = {((resized_w + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE,((resized_h + BLOCK_SIZE -1) / BLOCK_SIZE) * BLOCK_SIZE};
+    size_t global3[2] = {((resized_w_padded + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE,((resized_h_padded + BLOCK_SIZE -1) / BLOCK_SIZE) * BLOCK_SIZE};
     size_t local3[2] = {BLOCK_SIZE, BLOCK_SIZE};
 
     int r = window / 2;
@@ -477,6 +477,7 @@ int main(int argc, char **argv)
     clSetKernelArg(kernel2,9,sizeof(cl_int),&resized_h_padded);
     clSetKernelArg(kernel2,10, sizeof(cl_int),&window); 
     clSetKernelArg(kernel2,11, localMemSize,NULL); 
+    clSetKernelArg(kernel2,12, localMemSize,NULL); 
 
 
     clEnqueueNDRangeKernel(queue,kernel2,2,NULL,global3, local3,0,NULL,NULL);
@@ -519,6 +520,7 @@ int main(int argc, char **argv)
     clSetKernelArg(kernel2,9,sizeof(cl_int),&resized_h_padded);
     clSetKernelArg(kernel2,10, sizeof(cl_int),&window); 
     clSetKernelArg(kernel2,11, localMemSize,NULL); 
+    clSetKernelArg(kernel2,12, localMemSize,NULL); 
 
     clEnqueueNDRangeKernel(queue,kernel2,2,NULL,global3, local3,0, NULL,NULL);
     clFinish(queue);

@@ -271,7 +271,8 @@ __kernel void zncc_fast_integral(
         int width,
         int height,
         int window,
-        __local uchar* tileL
+        __local uchar* tileL,
+        __local uchar* tileR
         )
 {
     int x = get_global_id(0);
@@ -295,8 +296,6 @@ __kernel void zncc_fast_integral(
     int start_x = group_x * local_w - r;
     int start_y = group_y * local_h - r;
 
-    barrier(CLK_LOCAL_MEM_FENCE);
-
     for (int ty = ly; ty < tile_h; ty += local_h)
         {
         for (int tx = lx; tx < tile_w; tx += local_w)
@@ -310,10 +309,12 @@ __kernel void zncc_fast_integral(
                 img_y >= 0 && img_y < height)
                 {
                 tileL[tile_idx] = left[img_y * width + img_x];
+                tileR[tile_idx] = right[img_y * width + img_x];
                 }
             else
                 {
                 tileL[tile_idx] = 0;
+                tileR[tile_idx] = 0;
                 }
             }
         }
@@ -356,11 +357,18 @@ __kernel void zncc_fast_integral(
         for(int j = -r; j <= r; j++)
         for(int i = -r; i <= r; i++)
         {
-            int tx = local_x + j;
-            int ty = local_y + i;
+            int tx = local_x + i;
+            int ty = local_y + j;
+
+            int tx_r = tx - d * disp_sign;
 
             float L = (float)tileL[ty * tile_w + tx];
-            float R = (float)right[(y + j) * width + xr + i];
+
+            float R;
+            if (tx_r >= 0 && tx_r < tile_w)
+                R = tileR[ty * tile_w + tx_r];
+            else
+                R = right[(y + j) * width + xr + i];
 
             //float a = left[(y + j) * width + x + i];
             //float b = right[(y + j) * width + xr + i];
