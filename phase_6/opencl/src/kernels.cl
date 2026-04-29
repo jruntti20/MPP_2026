@@ -3,7 +3,8 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 #define MAX_DISPARITY 64
-#define BLOCK_SIZE 16
+#define BLOCK_WIDTH 32
+#define BLOCK_HEIGHT 8
 typedef unsigned char BYTE;
 #define DEBUG_BUFFER_SIZE 8192
 
@@ -271,8 +272,8 @@ __kernel void zncc_fast_integral(
         int width,
         int height,
         int window,
-        __local uchar* tileL,
-        __local uchar* tileR
+        __local uchar *tileL,
+        __local uchar *tileR
         )
 {
     int x = get_global_id(0);
@@ -290,11 +291,27 @@ __kernel void zncc_fast_integral(
     int r = window / 2;
     int N = window * window;
 
+    //__local float tileL[BLOCK_HEIGHT][BLOCK_WIDTH];
+    //__local float tileR[BLOCK_HEIGHT][BLOCK_WIDTH + MAX_DISPARITY];
+
     int tile_w = local_w + 2 * r;
     int tile_h = local_h + 2 * r;
 
+    int tileR_w = tile_w + MAX_DISPARITY;
+    int tileR_h = tile_h;
+
     int start_x = group_x * local_w - r;
     int start_y = group_y * local_h - r;
+
+    /*
+    
+    if (x < width && y < height)
+        {
+        tileL[ly][lx] = left[y * width + x];
+        }
+    
+    */
+
 
     for (int ty = ly; ty < tile_h; ty += local_h)
         {
@@ -309,11 +326,30 @@ __kernel void zncc_fast_integral(
                 img_y >= 0 && img_y < height)
                 {
                 tileL[tile_idx] = left[img_y * width + img_x];
-                tileR[tile_idx] = right[img_y * width + img_x];
                 }
             else
                 {
                 tileL[tile_idx] = 0;
+                }
+            }
+        }
+
+    for (int dy = ly; dy < tileR_h; dy += local_h)
+        {
+        int img_y = start_y + dy;
+        for (int dx = lx; dx < tileR_w; dx += local_w)
+            {
+            int img_x = start_x + dx - MAX_DISPARITY;
+
+            int tile_idx = dy * tileR_w + dx;
+
+            if (img_x >= 0 && img_x < width &&
+                img_y >= 0 && img_y < height)
+                {
+                tileR[tile_idx] = right[img_y * width + img_x];
+                }
+            else
+                {
                 tileR[tile_idx] = 0;
                 }
             }
@@ -321,8 +357,10 @@ __kernel void zncc_fast_integral(
 
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    if(x>=width || y >= height)
+    if (x >= width || y >= height)
+        {
         return;
+        }
 
     if(x < r || y < r || x >= width-r || y >= height-r)
     {
@@ -336,14 +374,19 @@ __kernel void zncc_fast_integral(
     int local_x = lx + r;
     int local_y = ly + r;
 
+    float meanL = meanTableL[y * width + x];
+    float varL = varTableL[y * width + x];
+    if (varL < 1e-6f)
+        {
+        disparity[y * width + x] = 0;
+        return;
+        }
+
     int best_d = 0;
     float best_score = -2.0f;
 
-    float meanL = meanTableL[y * width + x];
-    float varL = varTableL[y * width + x];
-    if(varL < 1e-6f) return;
-
-    for(int d=0; d<MAX_DISPARITY && x+d < width-window; d++)
+    //for(int d=0; d<MAX_DISPARITY && x+d < width-window; d++)
+    for(int d=0; d<MAX_DISPARITY; d++)
     {
         int xr = x - d * disp_sign;
         if (xr - r < 0 || xr + r >= width) continue;
@@ -354,28 +397,39 @@ __kernel void zncc_fast_integral(
 
         float dot = 0.0f;
 
-        for(int j = -r; j <= r; j++)
-        for(int i = -r; i <= r; i++)
-        {
-            int tx = local_x + i;
-            int ty = local_y + j;
-
-            int tx_r = tx - d * disp_sign;
-
-            float L = (float)tileL[ty * tile_w + tx];
-
-            float R;
-            if (tx_r >= 0 && tx_r < tile_w)
-                R = tileR[ty * tile_w + tx_r];
-            else
-                R = right[(y + j) * width + xr + i];
-
-            //float a = left[(y + j) * width + x + i];
-            //float b = right[(y + j) * width + xr + i];
-
-            //dot += a*b;
-            dot += L*R;
-        }
+        for (int j = -r; j <= r; j++)
+            {
+        	int ty = local_y + j;
+        	for(int i = -r; i <= r; i++)
+        	    {
+        	    int tx = local_x + i;
+	
+        	    int tx_r = tx - d * disp_sign + MAX_DISPARITY;
+	
+        	    float L = (float)tileL[ty * tile_w + tx];
+	
+        	    float R;
+        	    if (tx_r >= 0 && tx_r < tileR_w)
+        	        R = tileR[ty * tileR_w + tx_r];
+                else
+                    {
+                    int gx = xr + i;
+                    int gy = y + j;
+                    if (gx >= 0 && gx < width && gy >= 0 && gy < height)
+                        {
+                        R = right[gy * width + gx];
+                        }
+                    else
+                        R = 0;
+                    }
+	
+        	    //float a = left[(y + j) * width + x + i];
+        	    //float b = right[(y + j) * width + xr + i];
+	
+        	    //dot += a*b;
+        	    dot += L*R;
+        	    }
+            }
 
         float numerator = dot - N * meanL * meanR;
         float denom = sqrt(varL * varR) * N + 1e-6f;

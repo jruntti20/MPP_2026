@@ -28,6 +28,8 @@
 #define MAX_DISPARITY 64
 #define RESIZE_FACTOR 4
 #define BLOCK_SIZE 16
+#define BLOCK_WIDTH 32
+#define BLOCK_HEIGHT 8
 
 typedef unsigned char BYTE;
 
@@ -454,14 +456,17 @@ int main(int argc, char **argv)
     clEnqueueWriteBuffer(queue, debugIndex, CL_TRUE, 0, sizeof(int), &zero, 0, NULL, NULL);
 
 
-    size_t global3[2] = {((resized_w_padded + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE,((resized_h_padded + BLOCK_SIZE -1) / BLOCK_SIZE) * BLOCK_SIZE};
-    size_t local3[2] = {BLOCK_SIZE, BLOCK_SIZE};
+    size_t global3[2] = {((resized_w_padded + BLOCK_WIDTH - 1) / BLOCK_WIDTH) * BLOCK_WIDTH,((resized_h_padded + BLOCK_HEIGHT -1) / BLOCK_HEIGHT) * BLOCK_HEIGHT};
+    size_t local3[2] = {BLOCK_WIDTH, BLOCK_HEIGHT};
 
     int r = window / 2;
-    int tile_h = BLOCK_SIZE + 2 * r;
-    int tile_w = BLOCK_SIZE + 2 * r;
+    int tileL_h = BLOCK_HEIGHT + 2 * r;
+    int tileL_w = BLOCK_WIDTH + 2 * r;
+    int tileR_h = BLOCK_HEIGHT + 2 * r;
+    int tileR_w = BLOCK_WIDTH + MAX_DISPARITY + 2 * r;
 
-    size_t localMemSize = tile_w * tile_h * sizeof(unsigned char);
+    size_t localMemSizeL = tileL_w * tileL_h * sizeof(unsigned char);
+    size_t localMemSizeR = tileR_w * tileR_h * sizeof(unsigned char);
 
 
     cl_kernel kernel2 = clCreateKernel(program1,"zncc_fast_integral",&err);
@@ -476,8 +481,8 @@ int main(int argc, char **argv)
     clSetKernelArg(kernel2,8,sizeof(cl_int),&resized_w_padded);
     clSetKernelArg(kernel2,9,sizeof(cl_int),&resized_h_padded);
     clSetKernelArg(kernel2,10, sizeof(cl_int),&window); 
-    clSetKernelArg(kernel2,11, localMemSize,NULL); 
-    clSetKernelArg(kernel2,12, localMemSize,NULL); 
+    clSetKernelArg(kernel2,11, localMemSizeL, NULL);
+    clSetKernelArg(kernel2,12, localMemSizeR, NULL);
 
 
     clEnqueueNDRangeKernel(queue,kernel2,2,NULL,global3, local3,0,NULL,NULL);
@@ -519,8 +524,8 @@ int main(int argc, char **argv)
     clSetKernelArg(kernel2,8,sizeof(cl_int),&resized_w_padded);
     clSetKernelArg(kernel2,9,sizeof(cl_int),&resized_h_padded);
     clSetKernelArg(kernel2,10, sizeof(cl_int),&window); 
-    clSetKernelArg(kernel2,11, localMemSize,NULL); 
-    clSetKernelArg(kernel2,12, localMemSize,NULL); 
+    clSetKernelArg(kernel2,11, localMemSizeL, NULL);
+    clSetKernelArg(kernel2,12, localMemSizeR, NULL);
 
     clEnqueueNDRangeKernel(queue,kernel2,2,NULL,global3, local3,0, NULL,NULL);
     clFinish(queue);
