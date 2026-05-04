@@ -18,10 +18,12 @@
 // CROSS_CHECK_THRESHOLD_PIXELS: largest allowed left/right disparity mismatch in disparity pixels.
 // OCCLUSION_FILL_RANGE_FULL_RES: horizontal search distance used for filling invalid pixels at full resolution.
 #define BLOCK_SIZE 8 // Workgroup size of the occlusion fill kernel.
+
+bool useLocal = true; // Default to local memory kernel
 #define ZNCC_MAX_DISPARITY_FULL_RES 256
 #define ZNCC_MAX_DISPARITY (ZNCC_MAX_DISPARITY_FULL_RES / SCALE)
 #define ZNCC_WINDOW_RADIUS 4
-#define CROSS_CHECK_THRESHOLD_PIXELS 2
+#define CROSS_CHECK_THRESHOLD_PIXELS 5
 #define OCCLUSION_FILL_RANGE_FULL_RES 16
 
 #define SCALE 4
@@ -32,6 +34,14 @@
 
 typedef unsigned char BYTE;
 struct timeval t[6];
+
+long elapsedMs(const timeval& start, const timeval& end)
+{
+    long seconds = end.tv_sec - start.tv_sec;
+    long useconds = end.tv_usec - start.tv_usec;
+    if(useconds < 0){seconds--; useconds += 1000000;}
+    return seconds * 1000 + useconds / 1000;
+}
 
 std::string loadKernelSource(const char* filename)
 {
@@ -49,10 +59,22 @@ std::string loadKernelSource(const char* filename)
     );
 }
 
-int main()
+int main(int argc, char* argv[])
 {
-    const char imgPathLeft[] = "../img/im0.png";
-    const char imgPathRight[] = "../img/im1.png";
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--global") {
+            useLocal = false;
+        } else if (arg == "--local") {
+            useLocal = true;
+        } else {
+            std::cerr << "Usage: " << argv[0] << " [--local|--global]" << std::endl;
+            return -1;
+        }
+    }
+
+    const char imgPathLeft[] = "../im0.png";
+    const char imgPathRight[] = "../im1.png";
     const char znccOutputPathLeft[] = "../Output_images/depth_zncc_left.png";
     const char znccOutputPathRight[] = "../Output_images/depth_zncc_right.png";
 
@@ -160,12 +182,20 @@ int main()
     cl_mem filledBuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, rw*rh, nullptr, &err);
 
     size_t global[2] = {rw,rh};
+    size_t znccLocal[2] = {16, 16};
+    size_t znccGlobalLocal[2] = {
+        ((rw + znccLocal[0] - 1) / znccLocal[0]) * znccLocal[0],
+        ((rh + znccLocal[1] - 1) / znccLocal[1]) * znccLocal[1]
+    };
 
     /* ---------- ZNCC ---------- */
 
     gettimeofday(&t[1], NULL);
 
-    std::string kernelSource1 = loadKernelSource("kernel_fast.cl");
+    std::string kernelFile = useLocal ? "kernel_local.cl" : "kernel_global.cl";
+    std::string kernelName = useLocal ? "zncc_local" : "zncc_global";
+
+    std::string kernelSource1 = loadKernelSource(kernelFile.c_str());
     const char* src1 = kernelSource1.c_str();
     size_t src1size = kernelSource1.length();
     cl_program program1 = clCreateProgramWithSource(context, 1, &src1, &src1size, &err);
@@ -174,17 +204,32 @@ int main()
         " -D ZNCC_WINDOW_RADIUS=" + std::to_string(ZNCC_WINDOW_RADIUS);
     err = clBuildProgram(program1, 1, &device, znccBuildOptions.c_str(), nullptr, nullptr);
 
-    cl_kernel kernel1 = clCreateKernel(program1, "zncc_fast", &err);
+    cl_kernel kernel1 = clCreateKernel(program1, kernelName.c_str(), &err);
+
+    clSetKernelArg(kernel1, 4, sizeof(int), &rw);
+    clSetKernelArg(kernel1, 5, sizeof(int), &rh);
 
     int disp_sign = 1;
     clSetKernelArg(kernel1, 0, sizeof(cl_mem), &leftResizedBuffer);
     clSetKernelArg(kernel1, 1, sizeof(cl_mem), &rightResizedBuffer);
     clSetKernelArg(kernel1, 2, sizeof(cl_mem), &dispLBuffer);
     clSetKernelArg(kernel1, 3, sizeof(int), &disp_sign);
-    clSetKernelArg(kernel1, 4, sizeof(int), &rw);
-    clSetKernelArg(kernel1, 5, sizeof(int), &rh);
 
-    clEnqueueNDRangeKernel(queue, kernel1, 2, nullptr, global, nullptr, 0, nullptr, nullptr);
+    err = clEnqueueNDRangeKernel(
+        queue,
+        kernel1,
+        2,
+        nullptr,
+        useLocal ? znccGlobalLocal : global,
+        useLocal ? znccLocal : nullptr,
+        0,
+        nullptr,
+        nullptr
+    );
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to enqueue ZNCC left kernel: " << err << std::endl;
+        return -1;
+    }
     clFinish(queue);
 
     disp_sign = -1;
@@ -193,7 +238,21 @@ int main()
     clSetKernelArg(kernel1, 2, sizeof(cl_mem), &dispRBuffer);
     clSetKernelArg(kernel1, 3, sizeof(int), &disp_sign);
 
-    clEnqueueNDRangeKernel(queue, kernel1, 2, nullptr, global, nullptr, 0, nullptr, nullptr);
+    err = clEnqueueNDRangeKernel(
+        queue,
+        kernel1,
+        2,
+        nullptr,
+        useLocal ? znccGlobalLocal : global,
+        useLocal ? znccLocal : nullptr,
+        0,
+        nullptr,
+        nullptr
+    );
+    if (err != CL_SUCCESS) {
+        std::cerr << "Failed to enqueue ZNCC right kernel: " << err << std::endl;
+        return -1;
+    }
     clFinish(queue);
 
     // Save the raw left/right ZNCC disparity maps before cross-checking and occlusion filling.
@@ -268,25 +327,10 @@ int main()
     /* ---------- SAVE ---------- */
     lodepng_encode_file("../Output_images/depth_filled.png", filledDisparity.data(), rw, rh, LCT_GREY, 8);
 
-    long seconds_1 = t[1].tv_sec - t[0].tv_sec;
-    long useconds_1 = t[1].tv_usec - t[0].tv_usec;
-    if(useconds_1 < 0){seconds_1--; useconds_1 += 1e6;}
-        long ms1 = seconds_1 * 1000 + useconds_1 / 1000;
-
-    long seconds_2 = t[2].tv_sec - t[1].tv_sec;
-    long useconds_2 = t[2].tv_usec - t[1].tv_usec;
-    if(useconds_2 < 0){seconds_2--; useconds_2 += 1e6;}
-        long ms2 = seconds_2 * 1000 + useconds_2 / 1000;
-
-    long seconds_3 = t[3].tv_sec - t[2].tv_sec;
-    long useconds_3 = t[3].tv_usec - t[2].tv_usec;
-    if(useconds_3 < 0){seconds_3--; useconds_3 += 1e6;}
-        long ms3 = seconds_3 * 1000 + useconds_3 / 1000;
-
-    long seconds_4 = t[4].tv_sec - t[3].tv_sec;
-    long useconds_4 = t[4].tv_usec - t[3].tv_usec;
-    if(useconds_4 < 0){seconds_4--; useconds_4 += 1e6;}
-        long ms4 = seconds_4 * 1000 + useconds_4 / 1000;
+    long ms1 = elapsedMs(t[0], t[1]);
+    long ms2 = elapsedMs(t[1], t[2]);
+    long ms3 = elapsedMs(t[2], t[3]);
+    long ms4 = elapsedMs(t[3], t[4]);
 
     printf("Resize + grayscale: %ld ms\n", ms1);
     printf("ZNCC: %ld ms\n", ms2);
