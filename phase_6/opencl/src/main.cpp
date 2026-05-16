@@ -23,13 +23,15 @@
 
 #define WIDTH 2940
 #define HEIGHT 2016
-#define WINDOW 13
+#define WINDOW 11
 #define CHANNELS 4
 #define MAX_DISPARITY 64
 #define RESIZE_FACTOR 4
 #define BLOCK_SIZE 16
 #define BLOCK_WIDTH 32
 #define BLOCK_HEIGHT 8
+#define NEIGHBOURHOOD_RANGE 40
+#define CC_THRESHOLD 6
 
 typedef unsigned char BYTE;
 
@@ -122,8 +124,8 @@ int main(int argc, char **argv)
     unsigned int w = WIDTH;
     unsigned int h = HEIGHT;
     unsigned int d = MAX_DISPARITY;
-    int threshold = 10;
-    int neighbourhood_range = 50;
+    int threshold = CC_THRESHOLD;
+    int neighbourhood_range = NEIGHBOURHOOD_RANGE;
 
     int window = WINDOW;
     unsigned int resize_factor = RESIZE_FACTOR;
@@ -463,7 +465,7 @@ int main(int argc, char **argv)
     int tileL_h = BLOCK_HEIGHT + 2 * r;
     int tileL_w = BLOCK_WIDTH + 2 * r;
     int tileR_h = BLOCK_HEIGHT + 2 * r;
-    int tileR_w = BLOCK_WIDTH + MAX_DISPARITY + 2 * r;
+    int tileR_w = BLOCK_WIDTH + 2 * MAX_DISPARITY + 2 * r;
 
     size_t localMemSizeL = tileL_w * tileL_h * sizeof(unsigned char);
     size_t localMemSizeR = tileR_w * tileR_h * sizeof(unsigned char);

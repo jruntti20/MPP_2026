@@ -261,13 +261,13 @@ __kernel void zncc_fast(
 
 
 __kernel void zncc_fast_integral(
-        __global uchar *left,
-        __global uchar *right,
+        __global uchar* restrict left,
+        __global uchar* restrict right,
         __global float *meanTableL,
         __global float *meanTableR,
         __global float *varTableL,
         __global float *varTableR,
-        __global uchar *disparity,
+        __global uchar* restrict disparity,
         int disp_sign,
         int width,
         int height,
@@ -291,34 +291,25 @@ __kernel void zncc_fast_integral(
     int r = window / 2;
     int N = window * window;
 
-    //__local float tileL[BLOCK_HEIGHT][BLOCK_WIDTH];
-    //__local float tileR[BLOCK_HEIGHT][BLOCK_WIDTH + MAX_DISPARITY];
-
     int tile_w = local_w + 2 * r;
     int tile_h = local_h + 2 * r;
 
-    int tileR_w = tile_w + MAX_DISPARITY;
+    int tileR_w = tile_w +  MAX_DISPARITY;
     int tileR_h = tile_h;
 
     int start_x = group_x * local_w - r;
     int start_y = group_y * local_h - r;
 
-    /*
-    
-    if (x < width && y < height)
-        {
-        tileL[ly][lx] = left[y * width + x];
-        }
-    
-    */
+    int right_offset = (disp_sign > 0) ? -MAX_DISPARITY : 0;
 
+    //int img_x = start_x + dx + right_offset;
 
     for (int ty = ly; ty < tile_h; ty += local_h)
         {
+        int img_y = start_y + ty;
         for (int tx = lx; tx < tile_w; tx += local_w)
             {
             int img_x = start_x + tx;
-            int img_y = start_y + ty;
 
             int tile_idx = ty * tile_w + tx;
 
@@ -329,7 +320,7 @@ __kernel void zncc_fast_integral(
                 }
             else
                 {
-                tileL[tile_idx] = 0;
+                tileL[tile_idx] = 0.0f;
                 }
             }
         }
@@ -339,8 +330,7 @@ __kernel void zncc_fast_integral(
         int img_y = start_y + dy;
         for (int dx = lx; dx < tileR_w; dx += local_w)
             {
-            int img_x = start_x + dx - MAX_DISPARITY;
-
+            int img_x = start_x + dx + right_offset;
             int tile_idx = dy * tileR_w + dx;
 
             if (img_x >= 0 && img_x < width &&
@@ -350,7 +340,7 @@ __kernel void zncc_fast_integral(
                 }
             else
                 {
-                tileR[tile_idx] = 0;
+                tileR[tile_idx] = 0.0f;
                 }
             }
         }
@@ -368,9 +358,6 @@ __kernel void zncc_fast_integral(
         return;
     }
 
-    //if (!(x + (d * disp_sign) < width - window))
-    //    return;
-
     int local_x = lx + r;
     int local_y = ly + r;
 
@@ -385,7 +372,6 @@ __kernel void zncc_fast_integral(
     int best_d = 0;
     float best_score = -2.0f;
 
-    //for(int d=0; d<MAX_DISPARITY && x+d < width-window; d++)
     for(int d=0; d<MAX_DISPARITY; d++)
     {
         int xr = x - d * disp_sign;
@@ -397,36 +383,30 @@ __kernel void zncc_fast_integral(
 
         float dot = 0.0f;
 
+#pragma unroll
         for (int j = -r; j <= r; j++)
             {
         	int ty = local_y + j;
+#pragma unroll
         	for(int i = -r; i <= r; i++)
         	    {
         	    int tx = local_x + i;
-	
-        	    int tx_r = tx - d * disp_sign + MAX_DISPARITY;
-	
         	    float L = (float)tileL[ty * tile_w + tx];
 	
-        	    float R;
-        	    if (tx_r >= 0 && tx_r < tileR_w)
-        	        R = tileR[ty * tileR_w + tx_r];
+        	    //int tx_r = tx - d * disp_sign + MAX_DISPARITY;
+        	    int tx_r;
+                if (disp_sign > 0)
+                    {
+                    tx_r = tx - d + MAX_DISPARITY;
+                    }
                 else
                     {
-                    int gx = xr + i;
-                    int gy = y + j;
-                    if (gx >= 0 && gx < width && gy >= 0 && gy < height)
-                        {
-                        R = right[gy * width + gx];
-                        }
-                    else
-                        R = 0;
+                    tx_r = tx + d;
                     }
 	
-        	    //float a = left[(y + j) * width + x + i];
-        	    //float b = right[(y + j) * width + xr + i];
 	
-        	    //dot += a*b;
+        	    float R = (float)tileR[ty * tileR_w + tx_r];
+	
         	    dot += L*R;
         	    }
             }
@@ -444,6 +424,7 @@ __kernel void zncc_fast_integral(
     }
 
     disparity[y * width + x] = best_d;
+    //disparity[y*width+x] = (uchar)(best_d * 255 / MAX_DISPARITY);
 
 }
 
